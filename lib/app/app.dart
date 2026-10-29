@@ -12,6 +12,13 @@ class VirtusApp extends StatelessWidget {
       title: 'Virtus 2027',
       debugShowCheckedModeBanner: false,
       theme: TabletTheme.build(),
+      builder: (context, child) {
+        // Material aporta DefaultTextStyle; sin él, Text muestra subrayado amarillo.
+        return Material(
+          type: MaterialType.transparency,
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: const TabletViewport(
         child: HomePage(),
       ),

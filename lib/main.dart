@@ -9,6 +9,15 @@ import 'package:virtus2027/core/theme/tablet_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: Color(0xFF2d4a2d),
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
+
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
@@ -33,6 +42,12 @@ class _BootstrapErrorApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       theme: TabletTheme.build(),
+      builder: (context, child) {
+        return Material(
+          type: MaterialType.transparency,
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: TabletViewport(
         child: Builder(
           builder: (context) {

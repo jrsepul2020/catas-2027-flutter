@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:virtus2027/core/layout/tablet_layout.dart';
 import 'package:virtus2027/core/widgets/tablet_scaffold.dart';
-import 'package:virtus2027/features/home/data/catadores_repository.dart';
-import 'package:virtus2027/features/home/domain/catador_slot.dart';
 import 'package:virtus2027/features/dashboard/presentation/dashboard_page.dart';
-import 'package:virtus2027/features/home/presentation/widgets/catadores_grid.dart';
+import 'package:virtus2027/features/home/data/dispositivos_repository.dart';
+import 'package:virtus2027/features/home/domain/dispositivo_home_item.dart';
+import 'package:virtus2027/features/home/presentation/widgets/dispositivos_grid.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -15,21 +15,21 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final _repository = CatadoresRepository();
+  final _repository = DispositivosRepository();
 
-  late Future<List<CatadorSlot>> _slotsFuture;
+  late Future<List<DispositivoHomeItem>> _dispositivosFuture;
 
   @override
   void initState() {
     super.initState();
-    _slotsFuture = _repository.fetchSlots();
+    _dispositivosFuture = _repository.fetchDispositivos();
   }
 
   Future<void> _reload() async {
     setState(() {
-      _slotsFuture = _repository.fetchSlots();
+      _dispositivosFuture = _repository.fetchDispositivos();
     });
-    await _slotsFuture;
+    await _dispositivosFuture;
   }
 
   @override
@@ -44,8 +44,8 @@ class _HomePageState extends State<HomePage> {
           tooltip: 'Actualizar',
         ),
       ],
-      body: FutureBuilder<List<CatadorSlot>>(
-        future: _slotsFuture,
+      body: FutureBuilder<List<DispositivoHomeItem>>(
+        future: _dispositivosFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
@@ -64,31 +64,33 @@ class _HomePageState extends State<HomePage> {
             );
           }
 
-          return CatadoresGrid(
-            slots: snapshot.data ?? [],
-            onSlotTap: _openDashboard,
+          return DispositivosGrid(
+            dispositivos: snapshot.data ?? [],
+            onDispositivoTap: _openDashboard,
           );
         },
       ),
     );
   }
 
-  void _openDashboard(CatadorSlot slot) {
+  void _openDashboard(DispositivoHomeItem item) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => DashboardPage(slot: slot),
+        builder: (_) => DashboardPage(dispositivo: item),
       ),
     );
   }
 
   String _formatLoadError(Object error) {
-    if (error is PostgrestException) {
-      if (error.message.contains('posicion')) {
-        return '${error.message}\n\nCierra la app (q) y vuelve a ejecutar: flutter run';
-      }
-      return error.message;
+    if (error is PostgrestException) return error.message;
+    final text = error.toString();
+    if (text.contains('SocketException') ||
+        text.contains('Failed host lookup') ||
+        text.contains('failed host lookup')) {
+      return 'Sin conexión a internet o no se puede contactar con Supabase. '
+          'Comprueba la red Wi‑Fi de la tablet e inténtalo de nuevo.';
     }
-    return error.toString();
+    return text;
   }
 }
 
@@ -117,7 +119,7 @@ class _ErrorView extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'No se pudieron cargar los catadores',
+            'No se pudieron cargar los dispositivos',
             style: theme.textTheme.titleLarge?.copyWith(
               fontSize: TabletLayout.errorTitleFontSize,
             ),

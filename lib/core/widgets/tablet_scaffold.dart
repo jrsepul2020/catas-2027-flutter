@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:virtus2027/core/layout/tablet_layout.dart';
+import 'package:virtus2027/core/widgets/status_bar_spacer.dart';
 
 /// Scaffold acotado al canvas 1003×627 (sin AppBar variable de Material).
 class TabletScaffold extends StatelessWidget {
@@ -22,6 +23,8 @@ class TabletScaffold extends StatelessWidget {
       color: theme.colorScheme.surface,
       child: Column(
         children: [
+          // El spacer debe coincidir con el tono blanco de las barras laterales.
+          const StatusBarSpacer(color: Colors.white),
           SizedBox(
             height: TabletLayout.headerHeight,
             child: Padding(
@@ -31,7 +34,11 @@ class TabletScaffold extends StatelessWidget {
                   const SizedBox(width: 4),
                   Text(
                     title,
-                    style: theme.textTheme.titleLarge,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      inherit: false,
+                      decoration: TextDecoration.none,
+                      color: theme.textTheme.titleLarge?.color,
+                    ),
                   ),
                   const Spacer(),
                   ...actions,
@@ -44,6 +51,7 @@ class TabletScaffold extends StatelessWidget {
             thickness: 1,
             color: theme.colorScheme.outlineVariant,
           ),
+          const SizedBox(height: 10),
           Expanded(child: body),
         ],
       ),
