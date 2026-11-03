@@ -38,7 +38,17 @@ class DispositivosGrid extends StatelessWidget {
         itemBuilder: (context, index) {
           final mesaNumero = mesas[index];
           final items = porMesa[mesaNumero]!
-            ..sort((a, b) => a.deviceId.compareTo(b.deviceId));
+            ..sort((a, b) {
+              // Mismo orden de asignación en mesa (puesto), no device_id.
+              final pa = a.puesto;
+              final pb = b.puesto;
+              if (pa != null && pb != null && pa != pb) {
+                return pa.compareTo(pb);
+              }
+              if (pa != null && pb == null) return -1;
+              if (pa == null && pb != null) return 1;
+              return a.deviceId.compareTo(b.deviceId);
+            });
 
           return _MesaRow(
             mesaNumero: mesaNumero,

@@ -129,6 +129,23 @@ abstract final class DashboardMuestraUtils {
     return e == 'pendiente' || e.isEmpty;
   }
 
+  /// Tanda lista para cerrar: no quedan pendientes, pospuestas ni en curso.
+  /// (Criterio acordado: sin `pendiente`/`pospuesta`; también sin `activa`.)
+  static bool tandaCompletada(List<MuestraEnTanda> muestras) {
+    if (muestras.isEmpty) return false;
+    for (final m in muestras) {
+      final e = _normalizeEstado(m.estado);
+      if (e == 'pendiente' ||
+          e.isEmpty ||
+          e == 'pospuesta' ||
+          e == 'activa' ||
+          e == 'en_curso') {
+        return false;
+      }
+    }
+    return true;
+  }
+
   static bool _matchesFiltro(MuestraEnTanda muestra, MuestraFiltro filtro) {
     final e = _normalizeEstado(muestra.estado);
     return switch (filtro) {

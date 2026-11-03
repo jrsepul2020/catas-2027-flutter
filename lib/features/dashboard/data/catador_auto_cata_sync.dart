@@ -3,8 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:virtus2027/config/supabase_config.dart';
+import 'package:virtus2027/features/diagnostico/diagnostico.dart';
 
-/// Escucha (Realtime + poll 2s) cuando la tanda tiene una muestra `activa`.
+/// Escucha (Realtime + poll) cuando la tanda tiene una muestra `activa`.
 /// Pensado para catadores en espera; el poll se puede pausar dentro de la ficha.
 class CatadorAutoCataSync {
   CatadorAutoCataSync({
@@ -12,8 +13,8 @@ class CatadorAutoCataSync {
     required this.onMuestraActiva,
     this.onSinMuestraActiva,
     SupabaseClient? client,
-    this.pollInterval = const Duration(seconds: 2),
-    this.debounce = const Duration(milliseconds: 350),
+    this.pollInterval = const Duration(seconds: 1),
+    this.debounce = const Duration(milliseconds: 250),
   }) : _client = client ?? SupabaseConfig.client;
 
   final String tandaId;
@@ -28,19 +29,21 @@ class CatadorAutoCataSync {
   Timer? _pollTimer;
   Timer? _debounceTimer;
   bool _pollActivo = true;
+  String? _ultimaMuestraNotificada;
 
   dynamic get _tandaDbId => int.tryParse(tandaId) ?? tandaId;
 
   void start() {
     _subscribeRealtime();
     _startPoll();
-    // Chequeo inmediato al arrancar.
     unawaited(_consultarMuestraActiva());
   }
 
   /// Mientras el catador espera (dashboard / tras aprobación).
   void resumePoll() {
     _pollActivo = true;
+    // Permite reabrir la misma u otra muestra tras volver de la ficha.
+    _ultimaMuestraNotificada = null;
     _startPoll();
     unawaited(_consultarMuestraActiva());
   }
@@ -65,7 +68,10 @@ class CatadorAutoCataSync {
         column: 'tanda_id',
         value: _tandaDbId,
       ),
-      callback: (_) => _scheduleCheck(),
+      callback: (payload) {
+        Diagnostico.ecoPostgres(payload);
+        _scheduleCheck();
+      },
     );
     _channel = channel;
     channel.subscribe();
@@ -86,24 +92,31 @@ class CatadorAutoCataSync {
 
   Future<void> _consultarMuestraActiva() async {
     try {
-      final row = await _client
-          .from('tanda_muestras')
-          .select('muestra_id, estado')
-          .eq('tanda_id', _tandaDbId)
-          .eq('estado', 'activa')
-          .order('orden', ascending: true)
-          .limit(1)
-          .maybeSingle();
+      final row = await Diagnostico.pollSelect(
+        'auto_cata',
+        () => _client
+            .from('tanda_muestras')
+            .select('muestra_id, estado, orden')
+            .eq('tanda_id', _tandaDbId)
+            .eq('estado', 'activa')
+            .order('orden', ascending: true)
+            .limit(1)
+            .maybeSingle(),
+      );
 
       if (row == null) {
+        _ultimaMuestraNotificada = null;
         onSinMuestraActiva?.call();
         return;
       }
       final id = row['muestra_id']?.toString();
       if (id == null || id.isEmpty) {
+        _ultimaMuestraNotificada = null;
         onSinMuestraActiva?.call();
         return;
       }
+      if (_ultimaMuestraNotificada == id) return;
+      _ultimaMuestraNotificada = id;
       onMuestraActiva(id);
     } catch (_) {
       // El poll/Realtime es best-effort; no bloquear la UI.

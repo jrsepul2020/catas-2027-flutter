@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:virtus2027/core/layout/tablet_layout.dart';
-import 'package:virtus2027/core/theme/virtus_colors.dart';
-import 'package:virtus2027/core/theme/virtus_text_styles.dart';
+import 'package:virtus2027/core/widgets/app_version_label.dart';
+import 'package:virtus2027/core/widgets/nube_badge.dart';
+import 'package:virtus2027/core/widgets/servidor_estado_chip.dart';
 import 'package:virtus2027/core/widgets/status_bar_spacer.dart';
-import 'package:virtus2027/features/dashboard/presentation/utils/dashboard_colors.dart';
+import 'package:virtus2027/features/cata/presentation/v2/cata_v2_theme.dart';
+import 'package:virtus2027/features/diagnostico/diagnostico.dart';
 import 'package:virtus2027/features/home/utils/pais_flag.dart';
 
 class DashboardHeader extends StatelessWidget {
@@ -18,7 +22,10 @@ class DashboardHeader extends StatelessWidget {
     required this.colorPrimario,
     this.esPresidente = false,
     this.mostrarModoPruebas = false,
+    this.puesto,
+    this.tabletNumero,
     this.onBack,
+    this.salirConHold = false,
     this.onRefresh,
     this.onEstadisticas,
     this.onTrucos,
@@ -30,191 +37,171 @@ class DashboardHeader extends StatelessWidget {
   final String? paisCodigo;
   final int mesaNumero;
   final int? tandaNumero;
+  // Conservado por compatibilidad con llamadas existentes (tema V2 fijo).
+  // ignore: unused_field
   final String? colorPrimario;
   final bool esPresidente;
   final bool mostrarModoPruebas;
+  final int? puesto;
+  final int? tabletNumero;
   final VoidCallback? onBack;
+  /// Si true, SALIR requiere mantener 3 s (producción). Si false, un toque (pruebas).
+  final bool salirConHold;
   final VoidCallback? onRefresh;
   final VoidCallback? onEstadisticas;
   final VoidCallback? onTrucos;
 
-  static const double height = 50;
+  static const double height = CataV2Theme.altoCabecera;
 
   @override
   Widget build(BuildContext context) {
-    final bg = DashboardColors.primario(colorPrimario);
+    final admin = CataV2Theme.mostrarInfoAdministrador;
+    final titulo = concursoNombre.trim().isEmpty
+        ? 'LA RÁBIDA 2027'
+        : concursoNombre.toUpperCase();
+    final barColor =
+        esPresidente ? CataV2Theme.cabeceraPresidente : CataV2Theme.cabecera;
 
     return ColoredBox(
-      color: bg,
+      color: barColor,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          StatusBarSpacer(color: bg),
+          StatusBarSpacer(color: barColor),
           SizedBox(
             height: height,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Row(
                 children: [
-                  Expanded(
-                flex: 3,
-                child: Text(
-                  concursoNombre.toUpperCase(),
-                  style: VirtusColors.titulo(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                  // Izquierda: marca
+                  Text(
+                    titulo,
+                    style: CataV2Theme.text(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.2,
+                    ),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Expanded(
-                flex: 5,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Flexible(
+                  // Centro: identidad + mesa/tanda
+                  if (admin)
+                    Expanded(
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
                             PaisFlag.emoji(paisCodigo),
-                            style: const TextStyle(fontSize: 18),
+                            style: const TextStyle(fontSize: 14),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
+                          const SizedBox(width: 4),
+                          Flexible(
                             child: Text(
-                              catadorNombre.toUpperCase(),
-                              style: VirtusTextStyles.plain(
-                                color: Colors.white,
-                                fontSize: 14,
+                              catadorNombre,
+                              style: CataV2Theme.text(
+                                fontSize: 12,
                                 fontWeight: FontWeight.w700,
+                                color: Colors.white,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          const SizedBox(width: 6),
+                          _Pill(
+                            text: rolLabel.toUpperCase(),
+                            destacado: true,
+                            barColor: barColor,
+                          ),
+                          _Pill(text: 'Mesa $mesaNumero'),
+                          if (tandaNumero != null)
+                            _Pill(text: 'Tanda $tandaNumero'),
+                          if (puesto != null) _Pill(text: 'Puesto $puesto'),
+                          if (tabletNumero != null)
+                            _Pill(text: 'Tablet $tabletNumero'),
                         ],
                       ),
+                    )
+                  else
+                    const Spacer(),
+                  // Derecha: salir / pruebas / ajustes + conexión + refresh
+                  if (onBack != null) ...[
+                    const SizedBox(width: 6),
+                    _SalirControl(
+                      onSalir: onBack!,
+                      requireHold: salirConHold,
                     ),
-                    const SizedBox(width: 8),
-                    _RolBadge(label: rolLabel, esPresidente: esPresidente),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Mesa $mesaNumero',
-                      style: VirtusTextStyles.plain(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  ],
+                  if (mostrarModoPruebas) ...[
+                    const SizedBox(width: 6),
+                    const _Chip(
+                      label: 'PRUEBAS',
+                      background: Color(0xFFC62828),
                     ),
-                    if (tandaNumero != null) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        'Tanda $tandaNumero',
-                        style: VirtusTextStyles.plain(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                    if (onTrucos != null) ...[
+                      const SizedBox(width: 4),
+                      _ActionChip(label: 'TRUCOS', onPressed: onTrucos!),
                     ],
                   ],
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (mostrarModoPruebas) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFC62828),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          'MODO PRUEBAS',
-                          style: VirtusTextStyles.plain(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      if (onTrucos != null)
-                        TextButton(
-                          onPressed: onTrucos,
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            backgroundColor: Colors.black.withValues(alpha: 0.25),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: Text(
-                            'TRUCOS',
-                            style: VirtusTextStyles.plain(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                      const SizedBox(width: 6),
-                    ],
-                    if (onEstadisticas != null)
-                      PopupMenuButton<String>(
-                        icon: Icon(
-                          Icons.settings,
-                          size: TabletLayout.headerIconSize - 4,
-                          color: Colors.white,
-                        ),
-                        tooltip: 'Ajustes',
-                        padding: EdgeInsets.zero,
-                        offset: const Offset(0, 40),
+                  if (onEstadisticas != null) ...[
+                    const SizedBox(width: 2),
+                    PopupMenuButton<String>(
+                      icon: Icon(
+                        Icons.settings,
+                        size: TabletLayout.headerIconSize - 8,
                         color: Colors.white,
-                        onSelected: (value) {
-                          if (value == 'estadisticas') onEstadisticas!();
-                        },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem<String>(
-                            value: 'estadisticas',
+                      ),
+                      tooltip: 'Ajustes',
+                      padding: EdgeInsets.zero,
+                      offset: const Offset(0, 40),
+                      color: Colors.white,
+                      onSelected: (value) {
+                        if (value == 'estadisticas') onEstadisticas!();
+                        if (value == 'salir') onBack?.call();
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem<String>(
+                          value: 'estadisticas',
+                          child: Text(
+                            'Estadísticas',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        if (onBack != null)
+                          const PopupMenuItem<String>(
+                            value: 'salir',
                             child: Text(
-                              'Estadísticas',
+                              'Salir a tablets',
                               style: TextStyle(fontWeight: FontWeight.w600),
                             ),
                           ),
-                        ],
-                      ),
-                    if (onRefresh != null)
-                      _HeaderIcon(
-                        icon: Icons.refresh,
-                        onPressed: onRefresh,
-                        tooltip: 'Actualizar',
-                      ),
-                    if (onBack != null)
-                      _HeaderIcon(
-                        icon: Icons.logout,
-                        onPressed: onBack,
-                        tooltip: 'Volver',
-                      ),
+                      ],
+                    ),
                   ],
-                ),
+                  const NubeBadge(),
+                  const ServidorEstadoChip(compact: true),
+                  DiagnosticoBoton(
+                    tabletNumero: tabletNumero,
+                    rolLabel: rolLabel,
+                  ),
+                  if (admin) const AppVersionLabel(onDark: true),
+                  if (onRefresh != null)
+                    IconButton(
+                      onPressed: onRefresh,
+                      iconSize: TabletLayout.headerIconSize - 8,
+                      color: Colors.white,
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Recargar datos del servidor',
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 34,
+                        minHeight: 34,
+                      ),
+                    ),
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
           ),
         ],
       ),
@@ -222,28 +209,140 @@ class DashboardHeader extends StatelessWidget {
   }
 }
 
-class _RolBadge extends StatelessWidget {
-  const _RolBadge({required this.label, required this.esPresidente});
+class _SalirControl extends StatefulWidget {
+  const _SalirControl({
+    required this.onSalir,
+    required this.requireHold,
+  });
+
+  final VoidCallback onSalir;
+  final bool requireHold;
+
+  @override
+  State<_SalirControl> createState() => _SalirControlState();
+}
+
+class _SalirControlState extends State<_SalirControl> {
+  Timer? _timer;
+  bool _holding = false;
+
+  void _startHold() {
+    if (!widget.requireHold) return;
+    _timer?.cancel();
+    setState(() => _holding = true);
+    _timer = Timer(const Duration(seconds: 3), () {
+      setState(() => _holding = false);
+      widget.onSalir();
+    });
+  }
+
+  void _cancelHold() {
+    _timer?.cancel();
+    _timer = null;
+    if (_holding && mounted) setState(() => _holding = false);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final child = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: _holding
+            ? Colors.white.withValues(alpha: 0.28)
+            : Colors.black.withValues(alpha: 0.28),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        widget.requireHold ? 'SALIR · 3s' : 'SALIR',
+        style: CataV2Theme.text(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
+
+    if (!widget.requireHold) {
+      return GestureDetector(
+        onTap: widget.onSalir,
+        child: child,
+      );
+    }
+
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) => _startHold(),
+      onPointerUp: (_) => _cancelHold(),
+      onPointerCancel: (_) => _cancelHold(),
+      child: child,
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  const _Pill({
+    required this.text,
+    this.destacado = false,
+    this.barColor = CataV2Theme.cabecera,
+  });
+
+  final String text;
+  final bool destacado;
+  final Color barColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(
+          color: destacado
+              ? CataV2Theme.checkCompleto.withValues(alpha: 0.9)
+              : Colors.white.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          text,
+          style: CataV2Theme.text(
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            color: destacado ? barColor : Colors.white,
+            letterSpacing: 0.2,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip({required this.label, required this.background});
 
   final String label;
-  final bool esPresidente;
+  final Color background;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: esPresidente
-            ? VirtusColors.claro
-            : Colors.white.withValues(alpha: 0.22),
-        borderRadius: BorderRadius.circular(12),
+        color: background,
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
-        label.toUpperCase(),
-        style: VirtusTextStyles.plain(
-          color: esPresidente ? VirtusColors.oscuro : Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
+        label,
+        style: CataV2Theme.text(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
           letterSpacing: 0.3,
         ),
       ),
@@ -251,28 +350,32 @@ class _RolBadge extends StatelessWidget {
   }
 }
 
-class _HeaderIcon extends StatelessWidget {
-  const _HeaderIcon({
-    required this.icon,
-    required this.onPressed,
-    required this.tooltip,
-  });
+class _ActionChip extends StatelessWidget {
+  const _ActionChip({required this.label, required this.onPressed});
 
-  final IconData icon;
-  final VoidCallback? onPressed;
-  final String tooltip;
+  final String label;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: onPressed,
-      iconSize: TabletLayout.headerIconSize - 4,
-      color: Colors.white,
-      icon: Icon(icon),
-      tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+    return Material(
+      color: Colors.black.withValues(alpha: 0.25),
+      borderRadius: BorderRadius.circular(4),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+          child: Text(
+            label,
+            style: CataV2Theme.text(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

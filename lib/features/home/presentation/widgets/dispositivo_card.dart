@@ -23,35 +23,32 @@ class DispositivoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final activo = item.activo;
+    final enUso = item.activo;
     final mesaLabel = item.mesaNumero?.toString() ?? '—';
-    final tabletLabel = item.deviceId.toString();
+    // Número principal = puesto en mesa (orden de asignación).
+    final numeroPrincipal = item.puesto?.toString() ?? item.deviceIdLabel;
+    final tabletLabel = item.deviceIdLabel;
     final puestoLabel = item.puesto?.toString();
     final esPresidente = item.tieneCatador && item.esPresidente;
 
     final borderColor = item.tieneCatador
         ? (esPresidente ? VirtusColors.oscuro : VirtusColors.medio)
-        : (activo ? VirtusColors.primario : theme.colorScheme.outlineVariant);
+        : theme.colorScheme.outlineVariant;
 
     final backgroundColor = item.tieneCatador
         ? (esPresidente
             ? VirtusColors.oscuro
-            : (activo
-                ? theme.colorScheme.primaryContainer
-                : theme.colorScheme.surfaceContainerHighest))
+            : theme.colorScheme.primaryContainer)
         : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.65);
 
-    final textoNombre = esPresidente
-        ? Colors.white
-        : (activo ? VirtusColors.primario : theme.colorScheme.onSurfaceVariant);
+    final textoNombre =
+        esPresidente ? Colors.white : VirtusColors.primario;
 
     final textoSecundario = esPresidente
         ? Colors.white.withValues(alpha: 0.94)
-        : (activo ? VirtusColors.oscuro : theme.hintColor);
+        : VirtusColors.oscuro;
 
-    final textoTablet = esPresidente
-        ? Colors.white
-        : (activo ? VirtusColors.oscuro : theme.colorScheme.onSurfaceVariant);
+    final textoTablet = esPresidente ? Colors.white : VirtusColors.oscuro;
 
     TextStyle estiloSecundario({Color? color}) {
       return VirtusTextStyles.plain(
@@ -67,81 +64,132 @@ class DispositivoCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(TabletLayout.slotRadius),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(TabletLayout.slotRadius),
-            border: Border.all(
-              color: borderColor,
-              width: item.tieneCatador ? 2 : 1,
+        child: Opacity(
+          opacity: enUso ? 0.55 : 1,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(TabletLayout.slotRadius),
+              border: Border.all(
+                color: borderColor,
+                width: item.tieneCatador ? 2 : 1,
+              ),
             ),
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                top: 4,
-                right: 6,
-                child: Text(
-                  tabletLabel,
-                  style: VirtusTextStyles.plain(
-                    fontSize: _tabletNumeroSize,
-                    fontWeight: FontWeight.w900,
-                    color: textoTablet,
-                    height: 1,
+            child: Stack(
+              children: [
+                Positioned(
+                  top: 4,
+                  right: 6,
+                  child: Text(
+                    numeroPrincipal,
+                    style: VirtusTextStyles.plain(
+                      fontSize: _tabletNumeroSize,
+                      fontWeight: FontWeight.w900,
+                      color: textoTablet,
+                      height: 1,
+                    ),
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      PaisFlag.emoji(item.paisCodigo),
-                      style: const TextStyle(fontSize: 24),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      item.tieneCatador ? item.catadorNombre : 'Sin asignar',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontSize: 12,
-                        decoration: TextDecoration.none,
-                        color: textoNombre,
-                        fontWeight: FontWeight.w800,
+                if (enUso)
+                  Positioned(
+                    top: 4,
+                    left: 4,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE65100),
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.lock,
+                              size: 10,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              'EN USO',
+                              style: VirtusTextStyles.plain(
+                                fontSize: 8,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                    if (esPresidente) ...[
-                      const SizedBox(height: 4),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                       Text(
-                        'PRESIDENTE',
-                        style: estiloSecundario(),
+                        PaisFlag.emoji(item.paisCodigo),
+                        style: const TextStyle(fontSize: 24),
                         textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ],
-                    const SizedBox(height: 6),
-                    if (showMesaEnTarjeta) ...[
+                      const SizedBox(height: 3),
                       Text(
-                        'Mesa $mesaLabel',
-                        style: estiloSecundario(
-                          color: esPresidente
-                              ? Colors.white.withValues(alpha: 0.88)
-                              : theme.colorScheme.onSurfaceVariant,
+                        item.tieneCatador ? item.catadorNombre : 'Sin asignar',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontSize: 12,
+                          decoration: TextDecoration.none,
+                          color: textoNombre,
+                          fontWeight: FontWeight.w800,
                         ),
                         textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (puestoLabel != null) ...[
-                        const SizedBox(height: 2),
+                      if (esPresidente) ...[
+                        const SizedBox(height: 4),
                         Text(
-                          'Puesto $puestoLabel',
+                          'PRESIDENTE',
+                          style: estiloSecundario(),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                      const SizedBox(height: 6),
+                      if (showMesaEnTarjeta) ...[
+                        Text(
+                          'Mesa $mesaLabel',
+                          style: estiloSecundario(
+                            color: esPresidente
+                                ? Colors.white.withValues(alpha: 0.88)
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (puestoLabel != null &&
+                            puestoLabel != tabletLabel) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Tablet $tabletLabel',
+                            style: estiloSecundario(
+                              color: esPresidente
+                                  ? Colors.white.withValues(alpha: 0.85)
+                                  : theme.colorScheme.onSurfaceVariant,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ] else ...[
+                        Text(
+                          'Tablet $tabletLabel',
                           style: estiloSecundario(
                             color: esPresidente
                                 ? Colors.white.withValues(alpha: 0.85)
@@ -150,21 +198,11 @@ class DispositivoCard extends StatelessWidget {
                           textAlign: TextAlign.center,
                         ),
                       ],
-                    ] else if (puestoLabel != null) ...[
-                      Text(
-                        'PUESTO $puestoLabel',
-                        style: estiloSecundario(
-                          color: esPresidente
-                              ? Colors.white.withValues(alpha: 0.85)
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

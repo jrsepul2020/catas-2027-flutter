@@ -40,4 +40,35 @@ catadores (
         )
         .toList();
   }
+
+  /// Marca el catador como en uso solo si estaba libre (`activo = false`).
+  /// Devuelve `true` si se reclamó (1 fila).
+  Future<bool> tryClaimCatador(String catadorId) async {
+    final rows = await _client
+        .from('catadores')
+        .update({'activo': true})
+        .eq('id', _toDbId(catadorId))
+        .eq('activo', false)
+        .select('id');
+
+    return (rows as List).isNotEmpty;
+  }
+
+  /// Fuerza `activo = true` (admin / tablet marcada por cierre inesperado).
+  Future<void> forceClaimCatador(String catadorId) async {
+    await _client
+        .from('catadores')
+        .update({'activo': true})
+        .eq('id', _toDbId(catadorId));
+  }
+
+  /// Libera la tablet al salir (`activo = false`).
+  Future<void> releaseCatador(String catadorId) async {
+    await _client
+        .from('catadores')
+        .update({'activo': false})
+        .eq('id', _toDbId(catadorId));
+  }
+
+  dynamic _toDbId(String id) => int.tryParse(id) ?? id;
 }

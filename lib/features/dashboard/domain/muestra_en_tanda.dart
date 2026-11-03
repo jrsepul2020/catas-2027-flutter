@@ -8,6 +8,8 @@ class MuestraEnTanda {
     this.codigo,
     this.codigoCiego,
     this.codigoTexto,
+    this.categoriaId,
+    this.categoriaNombre,
     this.categoriaCata,
     this.incidenciaMotivo,
     this.puntuacionCatador,
@@ -24,6 +26,10 @@ class MuestraEnTanda {
   final String? codigo;
   final String? codigoCiego;
   final String? codigoTexto;
+  /// `muestras.categoria_id`.
+  final String? categoriaId;
+  /// Nombre resuelto desde `categorias` (no el texto libre categoria_cata).
+  final String? categoriaNombre;
   final String? categoriaCata;
   final String? incidenciaMotivo;
   final double? puntuacionCatador;
@@ -47,6 +53,8 @@ class MuestraEnTanda {
       codigo: codigo,
       codigoCiego: codigoCiego,
       codigoTexto: codigoTexto,
+      categoriaId: categoriaId,
+      categoriaNombre: categoriaNombre,
       categoriaCata: categoriaCata,
       incidenciaMotivo: incidenciaMotivo,
       puntuacionCatador: puntuacionCatador ?? this.puntuacionCatador,
@@ -64,6 +72,8 @@ class MuestraEnTanda {
     int? codigo,
     String? codigoCiego,
     String? codigoTexto,
+    String? categoriaId,
+    String? categoriaNombre,
     String? categoriaCata,
     String? incidenciaMotivo,
   }) {
@@ -76,12 +86,25 @@ class MuestraEnTanda {
       codigo: codigo?.toString(),
       codigoCiego: _nonEmpty(codigoCiego),
       codigoTexto: _nonEmpty(codigoTexto),
+      categoriaId: _nonEmpty(categoriaId),
+      categoriaNombre: _nonEmpty(categoriaNombre),
       categoriaCata: _nonEmpty(categoriaCata),
       incidenciaMotivo: _nonEmpty(incidenciaMotivo),
       puntuacionCatador: null,
       puntuacionMedia: null,
       horaCata: null,
     );
+  }
+
+  /// Nombre a mostrar: categoría real de BD, luego subtipo, luego fallback.
+  String categoriaDisplay({String? fallback}) {
+    if (categoriaNombre != null && categoriaNombre!.isNotEmpty) {
+      return categoriaNombre!;
+    }
+    if (categoriaCata != null && categoriaCata!.isNotEmpty) {
+      return categoriaCata!;
+    }
+    return fallback ?? '';
   }
 
   String get horaCataLabel {

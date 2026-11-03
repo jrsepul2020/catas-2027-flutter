@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:virtus2027/config/supabase_config.dart';
+import 'package:virtus2027/features/diagnostico/diagnostico.dart';
 
 /// Escucha cambios en Supabase Realtime y notifica al dashboard (con debounce).
 class DashboardRealtimeSync {
@@ -28,7 +29,10 @@ class DashboardRealtimeSync {
 
     final channel = _client.channel('dashboard-tanda-$tandaId');
 
-    void onEvent(PostgresChangePayload _) => _scheduleReload();
+    void onEvent(PostgresChangePayload payload) {
+      Diagnostico.ecoPostgres(payload);
+      _scheduleReload();
+    }
 
     channel
         .onPostgresChanges(

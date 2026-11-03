@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:virtus2027/core/layout/tablet_viewport.dart';
 import 'package:virtus2027/core/models/catador.dart';
 import 'package:virtus2027/core/models/categoria.dart';
 import 'package:virtus2027/core/models/tanda.dart';
@@ -116,14 +117,17 @@ class MuestrasTandaList extends StatelessWidget {
 
     Navigator.of(context).push(
       MaterialPageRoute<bool>(
-        builder: (_) => CataPage(
-          muestra: muestra,
-          tanda: tanda,
-          categoria: cat,
-          catador: catador,
-          esPresidente: catador.rol?.toLowerCase() == 'presidente',
-          mesaId: catador.mesaId,
-          colorPrimario: colorPrimario,
+        builder: (_) => TabletViewport(
+          child: CataPage(
+            muestra: muestra,
+            tanda: tanda,
+            categoria: cat,
+            catador: catador,
+            esPresidente: catador.rol?.toLowerCase() == 'presidente',
+            mesaId: catador.mesaId,
+            colorPrimario: colorPrimario,
+            tandaMuestrasTotal: muestras.length,
+          ),
         ),
       ),
     );

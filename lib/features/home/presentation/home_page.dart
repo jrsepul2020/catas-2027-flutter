@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:virtus2027/core/layout/tablet_layout.dart';
+import 'package:virtus2027/core/theme/virtus_text_styles.dart';
+import 'package:virtus2027/core/layout/tablet_viewport.dart';
+import 'package:virtus2027/core/widgets/app_version_label.dart';
+import 'package:virtus2027/core/widgets/nube_badge.dart';
 import 'package:virtus2027/core/widgets/tablet_scaffold.dart';
 import 'package:virtus2027/features/dashboard/presentation/dashboard_page.dart';
 import 'package:virtus2027/features/home/data/dispositivos_repository.dart';
 import 'package:virtus2027/features/home/domain/dispositivo_home_item.dart';
 import 'package:virtus2027/features/home/presentation/widgets/dispositivos_grid.dart';
+import 'package:virtus2027/features/home/presentation/widgets/entorno_selector.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -18,6 +23,7 @@ class _HomePageState extends State<HomePage> {
   final _repository = DispositivosRepository();
 
   late Future<List<DispositivoHomeItem>> _dispositivosFuture;
+  bool _entrando = false;
 
   @override
   void initState() {
@@ -37,6 +43,9 @@ class _HomePageState extends State<HomePage> {
     return TabletScaffold(
       title: 'Virtus 2027',
       actions: [
+        const EntornoSelector(),
+        const NubeBadge(),
+        const AppVersionLabel(),
         IconButton(
           onPressed: _reload,
           iconSize: TabletLayout.headerIconSize,
@@ -64,21 +73,129 @@ class _HomePageState extends State<HomePage> {
             );
           }
 
-          return DispositivosGrid(
-            dispositivos: snapshot.data ?? [],
-            onDispositivoTap: _openDashboard,
+          return Stack(
+            children: [
+              DispositivosGrid(
+                dispositivos: snapshot.data ?? [],
+                onDispositivoTap: _onDispositivoTap,
+              ),
+              if (_entrando)
+                const ColoredBox(
+                  color: Color(0x33000000),
+                  child: Center(
+                    child: SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: CircularProgressIndicator(strokeWidth: 3),
+                    ),
+                  ),
+                ),
+            ],
           );
         },
       ),
     );
   }
 
-  void _openDashboard(DispositivoHomeItem item) {
-    Navigator.of(context).push(
+  Future<void> _onDispositivoTap(DispositivoHomeItem item) async {
+    if (_entrando) return;
+
+    final catadorId = item.catadorId;
+    if (catadorId == null || catadorId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Esta tablet no tiene catador asignado.')),
+      );
+      return;
+    }
+
+    setState(() => _entrando = true);
+    try {
+      final claimed = await _repository.tryClaimCatador(catadorId);
+      if (!mounted) return;
+
+      if (claimed) {
+        await _openDashboard(item);
+        return;
+      }
+
+      final forzar = await _mostrarDialogoEnUso();
+      if (!mounted) return;
+      if (forzar != true) return;
+
+      await _repository.forceClaimCatador(catadorId);
+      if (!mounted) return;
+      await _openDashboard(item);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_formatLoadError(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _entrando = false);
+    }
+  }
+
+  Future<bool?> _mostrarDialogoEnUso() {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(
+            'Tablet en uso',
+            style: VirtusTextStyles.plain(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          content: Text(
+            'Esta tablet figura en uso. ¿Entrar igualmente?',
+            style: VirtusTextStyles.plain(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF212121),
+              height: 1.35,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(
+                'Cancelar',
+                style: VirtusTextStyles.plain(fontWeight: FontWeight.w700),
+              ),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(
+                'Entrar',
+                style: VirtusTextStyles.plain(
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _openDashboard(DispositivoHomeItem item) async {
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => DashboardPage(dispositivo: item),
+        builder: (_) {
+          final page = DashboardPage(dispositivo: item);
+          // Presidente: canvas 1003×627 (Chrome = tablet).
+          if (item.esPresidente) {
+            return TabletViewport(child: page);
+          }
+          return page;
+        },
       ),
     );
+    if (!mounted) return;
+    await _reload();
   }
 
   String _formatLoadError(Object error) {
