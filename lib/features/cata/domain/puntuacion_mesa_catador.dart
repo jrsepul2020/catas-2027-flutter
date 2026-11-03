@@ -22,17 +22,32 @@ class PuntuacionMesaCatador {
 
   String get estadoLabel => recibida ? 'RECIBIDO' : 'PENDIENTE';
 
-  String? desvioLabel(double? media) {
-    if (total == null || media == null || media == 0) return null;
-    final pct = ((total! - media) / media * 100).abs();
-    final texto = pct.toStringAsFixed(1);
-    if (total! > media) return '↑ Más alta $texto%';
-    if (total! < media) return '↓ A la baja $texto%';
-    return '—';
+  /// Norma OIV / general: discordante si se aleja ≥ 7 puntos de la media.
+  static const double umbralDiscordanciaOiv = 7;
+
+  /// Diferencia absoluta respecto a la media del panel (null si no aplica).
+  double? desvioAbsoluto(double? media) {
+    if (total == null || media == null) return null;
+    return (total! - media).abs();
   }
 
-  bool get desvioAlto {
-    return false;
+  /// Solo true si incumple la norma OIV (±7 pts respecto a la media).
+  bool esDiscordante(double? media) {
+    final d = desvioAbsoluto(media);
+    if (d == null) return false;
+    return d >= umbralDiscordanciaOiv;
+  }
+
+  /// Etiqueta de desvío: solo si es discordante; si no, null (no mostrar).
+  String? desvioLabel(double? media) {
+    if (!esDiscordante(media)) return null;
+    final d = desvioAbsoluto(media)!;
+    final pts = d.truncateToDouble() == d
+        ? d.toStringAsFixed(0)
+        : d.toStringAsFixed(1);
+    if (total! > media!) return '↑ +$pts pts';
+    if (total! < media) return '↓ −$pts pts';
+    return null;
   }
 }
 

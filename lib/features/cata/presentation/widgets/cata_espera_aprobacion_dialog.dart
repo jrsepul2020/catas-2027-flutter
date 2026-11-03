@@ -1,268 +1,421 @@
 import 'package:flutter/material.dart';
+import 'package:virtus2027/core/theme/virtus_colors.dart';
 import 'package:virtus2027/core/theme/virtus_text_styles.dart';
 import 'package:virtus2027/features/cata/domain/ficha_definicion.dart';
 import 'package:virtus2027/features/cata/presentation/utils/cata_colors.dart';
 
-class CataEsperaAprobacionDialog extends StatefulWidget {
+class CataEsperaAprobacionDialog extends StatelessWidget {
   const CataEsperaAprobacionDialog({
     super.key,
     required this.ficha,
     required this.scores,
     required this.total,
+    required this.codigoMuestra,
     required this.onRevisar,
+    this.muestraOrden,
+    this.tandaMuestrasTotal,
   });
 
   final FichaDefinicion ficha;
   final Map<String, num> scores;
   final double total;
+  final String codigoMuestra;
   final VoidCallback onRevisar;
+  final int? muestraOrden;
+  final int? tandaMuestrasTotal;
+
+  static const _texto = Color(0xFF1B2B22);
+  static const _textoMuted = Color(0xFF6B7C72);
+  static const _borde = Color(0xFFD5E0D8);
+  static const _fondoDialog = Color(0xFFF7FAF8);
 
   @override
-  State<CataEsperaAprobacionDialog> createState() =>
-      _CataEsperaAprobacionDialogState();
+  Widget build(BuildContext context) {
+    final totalTexto = total.truncateToDouble() == total
+        ? total.toStringAsFixed(0)
+        : total.toStringAsFixed(1);
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      backgroundColor: _fondoDialog,
+      elevation: 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 740, maxHeight: 640),
+        child: SizedBox(
+          width: 720,
+          height: 610,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Puntuación enviada',
+                  textAlign: TextAlign.center,
+                  style: VirtusTextStyles.plain(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: _textoMuted,
+                    letterSpacing: 0.2,
+                    fontFamily: 'Inter',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const _EsperaPresidenteBanner(),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        flex: 5,
+                        child: _CriteriosPanel(
+                          ficha: ficha,
+                          scores: scores,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: _PuntosPanel(
+                          puntosTexto: totalTexto,
+                          codigoMuestra: codigoMuestra,
+                          muestraOrden: muestraOrden,
+                          tandaMuestrasTotal: tandaMuestrasTotal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 64,
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: onRevisar,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: VirtusColors.primario,
+                      foregroundColor: Colors.white,
+                      elevation: 4,
+                      shadowColor:
+                          VirtusColors.primario.withValues(alpha: 0.45),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      'REVISAR MI PUNTUACIÓN',
+                      style: VirtusTextStyles.plain(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 17,
+                        color: Colors.white,
+                        letterSpacing: 0.6,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _CataEsperaAprobacionDialogState extends State<CataEsperaAprobacionDialog>
-    with TickerProviderStateMixin {
-  static const _verdeOscuro = Color(0xFF2E7D32);
-  static const _verdeClaro = Color(0xFF66BB6A);
-  static const _textoOscuro = Color(0xFF212121);
-  static const _textoGris = Color(0xFF546E7A);
+class _EsperaPresidenteBanner extends StatefulWidget {
+  const _EsperaPresidenteBanner();
 
-  late final AnimationController _tituloController;
-  late final AnimationController _esperaController;
-  late final Animation<Color?> _tituloColor;
-  late final Animation<double> _esperaEscala;
+  @override
+  State<_EsperaPresidenteBanner> createState() =>
+      _EsperaPresidenteBannerState();
+}
+
+class _EsperaPresidenteBannerState extends State<_EsperaPresidenteBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
 
   @override
   void initState() {
     super.initState();
-    _tituloController = AnimationController(
+    _pulse = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
+      duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
-
-    _esperaController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 850),
-    )..repeat(reverse: true);
-
-    _tituloColor = ColorTween(
-      begin: _verdeOscuro,
-      end: _verdeClaro,
-    ).animate(CurvedAnimation(
-      parent: _tituloController,
-      curve: Curves.easeInOut,
-    ));
-
-    _esperaEscala = Tween<double>(begin: 0.92, end: 1.0).animate(
-      CurvedAnimation(parent: _esperaController, curve: Curves.easeInOut),
-    );
   }
 
   @override
   void dispose() {
-    _tituloController.dispose();
-    _esperaController.dispose();
+    _pulse.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final totalTexto = widget.total.truncateToDouble() == widget.total
-        ? widget.total.toStringAsFixed(0)
-        : widget.total.toStringAsFixed(1);
-
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-      backgroundColor: const Color(0xFFF5F5F5),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: SizedBox(
-        width: 700,
-        height: 540,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            AnimatedBuilder(
-              animation: _tituloColor,
-              builder: (context, child) {
-                return Container(
-                  margin: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    color: _tituloColor.value ?? _verdeOscuro,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (_tituloColor.value ?? _verdeOscuro)
-                            .withValues(alpha: 0.35),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: child,
-                );
-              },
-              child: Text(
-                'PUNTUACIÓN ENVIADA',
-                textAlign: TextAlign.center,
-                style: VirtusTextStyles.plain(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                  letterSpacing: 0.5,
-                ),
-              ),
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, child) {
+        final t = Curves.easeInOut.transform(_pulse.value);
+        return Opacity(
+          opacity: 0.62 + 0.38 * t,
+          child: child,
+        );
+      },
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: VirtusColors.primario,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: VirtusColors.primario.withValues(alpha: 0.28),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
             ),
-            AnimatedBuilder(
-              animation: _esperaController,
-              builder: (context, child) {
-                return Opacity(
-                  opacity: 0.65 + _esperaController.value * 0.35,
-                  child: Transform.scale(
-                    scale: _esperaEscala.value,
-                    child: child,
-                  ),
-                );
-              },
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding: const EdgeInsets.symmetric(vertical: 12),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFF8E1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: const Color(0xFFFF9800),
-                    width: 1.5,
-                  ),
+                  color: Colors.white.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
                 ),
-                child: Text(
-                  'ESPERE APROBACIÓN PRESIDENTE',
-                  textAlign: TextAlign.center,
-                  style: VirtusTextStyles.plain(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                    color: const Color(0xFFE65100),
-                    letterSpacing: 0.35,
-                  ),
+                child: const Icon(
+                  Icons.hourglass_top_rounded,
+                  size: 22,
+                  color: Colors.white,
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      flex: 3,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: ListView(
-                          padding: const EdgeInsets.all(12),
-                          children: [
-                            for (final grupo in widget.ficha.grupos) ...[
-                              Text(
-                                grupo.nombre.toUpperCase(),
-                                style: VirtusTextStyles.plain(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w900,
-                                  color: CataColors.cabecera,
-                                  letterSpacing: 0.4,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              for (final criterio in grupo.criterios) ...[
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 4),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          criterio.label,
-                                          style: VirtusTextStyles.plain(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                            color: _textoOscuro,
-                                            height: 1.2,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      ConstrainedBox(
-                                        constraints: const BoxConstraints(
-                                          minWidth: 32,
-                                        ),
-                                        child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: CataColors.cabecera
-                                              .withValues(alpha: 0.1),
-                                          borderRadius:
-                                              BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          '${widget.scores[criterio.id]?.round() ?? '—'}',
-                                          textAlign: TextAlign.center,
-                                          style: VirtusTextStyles.plain(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w900,
-                                            color: CataColors.acento,
-                                          ),
-                                        ),
-                                      ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                              const SizedBox(height: 10),
-                            ],
-                          ],
-                        ),
+                    Text(
+                      'Espere la aprobación del presidente',
+                      style: VirtusTextStyles.plain(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: 0.15,
+                        fontFamily: 'Inter',
+                        height: 1.15,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'TOTAL',
-                              style: VirtusTextStyles.plain(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: _textoGris,
-                                letterSpacing: 0.4,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              totalTexto,
-                              style: VirtusTextStyles.plain(
-                                fontSize: 64,
-                                fontWeight: FontWeight.w900,
-                                color: CataColors.acento,
-                                height: 1,
-                              ),
-                            ),
-                          ],
+                    const SizedBox(height: 3),
+                    Text(
+                      'Su ficha ya está registrada. Puede revisar si necesita corregir.',
+                      style: VirtusTextStyles.plain(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontFamily: 'Inter',
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CriteriosPanel extends StatelessWidget {
+  const _CriteriosPanel({
+    required this.ficha,
+    required this.scores,
+  });
+
+  final FichaDefinicion ficha;
+  final Map<String, num> scores;
+
+  @override
+  Widget build(BuildContext context) {
+    final filas = <Widget>[];
+    for (final grupo in ficha.grupos) {
+      for (final criterio in grupo.criterios) {
+        filas.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    criterio.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: VirtusTextStyles.plain(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: CataEsperaAprobacionDialog._texto,
+                      height: 1.1,
+                      fontFamily: 'Inter',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  constraints: const BoxConstraints(minWidth: 32),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: VirtusColors.fondoSuave,
+                    borderRadius: BorderRadius.circular(5),
+                    border: Border.all(color: VirtusColors.muyClaro),
+                  ),
+                  child: Text(
+                    '${scores[criterio.id]?.round() ?? '—'}',
+                    textAlign: TextAlign.center,
+                    style: VirtusTextStyles.plain(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: VirtusColors.primario,
+                      fontFamily: 'Inter',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: CataEsperaAprobacionDialog._borde),
+        boxShadow: [
+          BoxShadow(
+            color: VirtusColors.primario.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: SizedBox(
+                width: constraints.maxWidth,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: filas,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _PuntosPanel extends StatelessWidget {
+  const _PuntosPanel({
+    required this.puntosTexto,
+    required this.codigoMuestra,
+    this.muestraOrden,
+    this.tandaMuestrasTotal,
+  });
+
+  final String puntosTexto;
+  final String codigoMuestra;
+  final int? muestraOrden;
+  final int? tandaMuestrasTotal;
+
+  static TextStyle get _tituloStyle => VirtusTextStyles.plain(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: CataEsperaAprobacionDialog._textoMuted,
+        letterSpacing: 0.55,
+        fontFamily: 'Inter',
+      );
+
+  static TextStyle get _valorSecundarioStyle => VirtusTextStyles.plain(
+        fontSize: 22,
+        fontWeight: FontWeight.w800,
+        color: CataEsperaAprobacionDialog._texto,
+        height: 1.05,
+        fontFamily: 'Inter',
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final mostrarProgreso =
+        muestraOrden != null &&
+        tandaMuestrasTotal != null &&
+        tandaMuestrasTotal! > 0;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: CataEsperaAprobacionDialog._borde),
+        boxShadow: [
+          BoxShadow(
+            color: VirtusColors.primario.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('MUESTRA', style: _tituloStyle),
+                    const SizedBox(height: 4),
+                    Text(
+                      codigoMuestra,
+                      textAlign: TextAlign.center,
+                      style: _valorSecundarioStyle,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('PUNTOS', style: _tituloStyle),
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        puntosTexto,
+                        style: VirtusTextStyles.plain(
+                          fontSize: 52,
+                          fontWeight: FontWeight.w900,
+                          color: CataColors.acento,
+                          height: 1,
+                          fontFamily: 'Inter',
                         ),
                       ),
                     ),
@@ -270,26 +423,21 @@ class _CataEsperaAprobacionDialogState extends State<CataEsperaAprobacionDialog>
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: FilledButton(
-                onPressed: widget.onRevisar,
-                style: FilledButton.styleFrom(
-                  backgroundColor: _verdeOscuro,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: Text(
-                  'REVISAR MI PUNTUACIÓN',
-                  style: VirtusTextStyles.plain(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14,
-                    color: Colors.white,
-                    letterSpacing: 0.3,
-                  ),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('PROGRESO DE LA TANDA', style: _tituloStyle),
+                    const SizedBox(height: 4),
+                    Text(
+                      mostrarProgreso
+                          ? '$muestraOrden / $tandaMuestrasTotal'
+                          : '—',
+                      textAlign: TextAlign.center,
+                      style: _valorSecundarioStyle,
+                    ),
+                  ],
                 ),
               ),
             ),

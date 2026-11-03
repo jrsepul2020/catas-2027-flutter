@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:virtus2027/config/supabase_config.dart';
+import 'package:virtus2027/features/diagnostico/diagnostico.dart';
 
 /// Escucha cambios en puntuaciones de una muestra (debounce, filtro por tanda).
 class CataAprobacionRealtimeSync {
@@ -42,6 +43,7 @@ class CataAprobacionRealtimeSync {
         value: _tandaDbId,
       ),
       callback: (payload) {
+        Diagnostico.ecoPostgres(payload);
         final record = payload.newRecord.isNotEmpty
             ? payload.newRecord
             : payload.oldRecord;

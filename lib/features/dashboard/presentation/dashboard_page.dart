@@ -1,23 +1,30 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:virtus2027/core/layout/tablet_layout.dart';
+import 'package:virtus2027/core/layout/tablet_viewport.dart';
 import 'package:virtus2027/core/models/catador.dart';
 import 'package:virtus2027/core/models/categoria.dart';
 import 'package:virtus2027/core/models/tanda.dart';
 import 'package:virtus2027/features/cata/data/cata_repository.dart';
 import 'package:virtus2027/features/cata/presentation/cata_page.dart';
+import 'package:virtus2027/features/dashboard/data/catador_auto_cata_sync.dart';
 import 'package:virtus2027/features/dashboard/data/dashboard_realtime_sync.dart';
 import 'package:virtus2027/features/dashboard/data/tanda_repository.dart';
 import 'package:virtus2027/features/dashboard/domain/muestra_en_tanda.dart';
 import 'package:virtus2027/features/dashboard/domain/tablet_dashboard.dart';
 import 'package:virtus2027/features/dashboard/presentation/utils/dashboard_muestra_utils.dart';
-import 'package:virtus2027/features/dashboard/presentation/utils/dashboard_colors.dart';
+import 'package:virtus2027/features/dashboard/presentation/widgets/catador_espera_panel.dart';
 import 'package:virtus2027/features/dashboard/presentation/widgets/dashboard_header.dart';
 import 'package:virtus2027/features/dashboard/presentation/widgets/muestra_hero_card.dart';
 import 'package:virtus2027/features/dashboard/presentation/widgets/muestras_filter_tabs.dart';
 import 'package:virtus2027/features/dashboard/presentation/widgets/muestras_list.dart';
 import 'package:virtus2027/features/dashboard/presentation/widgets/muestras_pendientes_list.dart';
+import 'package:virtus2027/features/dashboard/presentation/widgets/tanda_completada_panel.dart';
 import 'package:virtus2027/config/app_mode.dart';
+import 'package:virtus2027/features/cata/presentation/v2/cata_v2_theme.dart';
+import 'package:virtus2027/features/home/data/dispositivos_repository.dart';
 import 'package:virtus2027/features/home/domain/dispositivo_home_item.dart';
 import 'package:virtus2027/features/pruebas/presentation/trucos_panel.dart';
 import 'package:virtus2027/core/theme/virtus_text_styles.dart';
@@ -33,12 +40,22 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   final _repository = DashboardRepository();
+  final _dispositivosRepository = DispositivosRepository();
 
   late Future<TabletDashboard> _dashboardFuture;
+  TabletDashboard? _ultimoDashboard;
   MuestraFiltro? _filtro;
   bool _filtroInicializado = false;
   DashboardRealtimeSync? _realtime;
   String? _realtimeTandaId;
+  CatadorAutoCataSync? _autoCata;
+  String? _autoCataTandaId;
+  String? _cataAbiertaMuestraId;
+  bool _abriendoCata = false;
+  bool _saliendo = false;
+  bool _iniciandoSiguienteTanda = false;
+  bool? _haySiguienteTanda;
+  String? _haySiguienteParaTandaId;
 
   @override
   void initState() {
@@ -52,6 +69,9 @@ class _DashboardPageState extends State<DashboardPage> {
     final sync = _realtime;
     _realtime = null;
     sync?.dispose();
+    final auto = _autoCata;
+    _autoCata = null;
+    auto?.dispose();
     super.dispose();
   }
 
@@ -60,9 +80,94 @@ class _DashboardPageState extends State<DashboardPage> {
       final dashboard = await _dashboardFuture;
       if (!mounted) return;
       await _ensureRealtimeSubscription(dashboard.tanda?.id);
+      _ensureCatadorAutoSync(dashboard);
+      await _sincronizarEstadoTandaCompletada(dashboard);
     } catch (_) {
       // Si falla Realtime, el refresco manual sigue disponible.
     }
+  }
+
+  void _ensureCatadorAutoSync(TabletDashboard dashboard) {
+    if (_esPresidente(dashboard)) {
+      _autoCata?.dispose();
+      _autoCata = null;
+      _autoCataTandaId = null;
+      return;
+    }
+
+    final tandaId = dashboard.tanda?.id;
+    if (tandaId == null || tandaId.isEmpty) return;
+    if (_autoCataTandaId == tandaId && _autoCata != null) {
+      if (_cataAbiertaMuestraId == null) _autoCata!.resumePoll();
+      return;
+    }
+
+    _autoCata?.dispose();
+    _autoCataTandaId = tandaId;
+    _autoCata = CatadorAutoCataSync(
+      tandaId: tandaId,
+      onMuestraActiva: (muestraId) {
+        unawaited(_abrirCataAutomaticaCatador(muestraId));
+      },
+    );
+    _autoCata!.start();
+  }
+
+  bool _mismoId(String a, String b) {
+    if (a == b) return true;
+    final ia = int.tryParse(a);
+    final ib = int.tryParse(b);
+    return ia != null && ib != null && ia == ib;
+  }
+
+  Future<void> _abrirCataAutomaticaCatador(String muestraId) async {
+    if (!mounted || _abriendoCata) return;
+    if (_cataAbiertaMuestraId != null &&
+        _mismoId(_cataAbiertaMuestraId!, muestraId)) {
+      return;
+    }
+
+    // Siempre datos frescos de Supabase (no el FutureBuilder cacheado).
+    TabletDashboard dashboard;
+    try {
+      dashboard = await _repository.fetchForDispositivo(widget.dispositivo);
+    } catch (_) {
+      return;
+    }
+    if (!mounted || _esPresidente(dashboard)) return;
+    if (dashboard.tanda == null || dashboard.catador == null) return;
+    if (dashboard.categoria == null) return;
+
+    MuestraEnTanda? muestra;
+    for (final m in dashboard.muestras) {
+      if (_mismoId(m.muestraId, muestraId) &&
+          !DashboardMuestraUtils.estaCatada(m)) {
+        muestra = m;
+        break;
+      }
+    }
+    // Fallback: cualquier muestra activa de la tanda.
+    muestra ??= DashboardMuestraUtils.muestraActiva(dashboard.muestras);
+    if (muestra == null ||
+        DashboardMuestraUtils.estaCatada(muestra) ||
+        !DashboardMuestraUtils.estaActiva(muestra)) {
+      return;
+    }
+    if (!mounted) return;
+
+    _abriendoCata = true;
+    _cataAbiertaMuestraId = muestra.muestraId;
+    _autoCata?.pausePoll();
+
+    _abrirCata(
+      context,
+      muestra: muestra,
+      tanda: dashboard.tanda!,
+      catador: dashboard.catador!,
+      categoria: dashboard.categoria,
+      colorPrimario: dashboard.concursoColorPrimario,
+      dashboard: dashboard,
+    );
   }
 
   Future<void> _ensureRealtimeSubscription(String? tandaId) async {
@@ -80,7 +185,117 @@ class _DashboardPageState extends State<DashboardPage> {
 
   void _onRealtimeUpdate() {
     if (!mounted) return;
+    unawaited(_manejarRealtimeDashboard());
+  }
+
+  Future<void> _manejarRealtimeDashboard() async {
     setState(() => _load(resetFiltro: false));
+    try {
+      final dashboard = await _dashboardFuture;
+      if (!mounted) return;
+      await _ensureRealtimeSubscription(dashboard.tanda?.id);
+      _ensureCatadorAutoSync(dashboard);
+      await _sincronizarEstadoTandaCompletada(dashboard);
+      if (_esPresidente(dashboard) || _abriendoCata) return;
+      if (DashboardMuestraUtils.tandaCompletada(dashboard.muestras)) return;
+      // Si el presidente acaba de abrir, no esperar solo al poll.
+      MuestraEnTanda? activa;
+      for (final m in dashboard.muestras) {
+        if (DashboardMuestraUtils.estaActiva(m) &&
+            !DashboardMuestraUtils.estaCatada(m)) {
+          activa = m;
+          break;
+        }
+      }
+      if (activa != null) {
+        await _abrirCataAutomaticaCatador(activa.muestraId);
+      }
+    } catch (_) {
+      // Best-effort.
+    }
+  }
+
+  /// Si la tanda está completa: cierra ficha abierta y consulta si hay siguiente.
+  Future<void> _sincronizarEstadoTandaCompletada(
+    TabletDashboard dashboard,
+  ) async {
+    final completa =
+        DashboardMuestraUtils.tandaCompletada(dashboard.muestras);
+    if (!completa) {
+      if (_haySiguienteTanda != null || _haySiguienteParaTandaId != null) {
+        setState(() {
+          _haySiguienteTanda = null;
+          _haySiguienteParaTandaId = null;
+        });
+      }
+      return;
+    }
+
+    _cerrarFichaSiAbierta();
+
+    final tandaId = dashboard.tanda?.id;
+    final mesaId = dashboard.mesa?.id ?? dashboard.catador?.mesaId;
+    if (tandaId == null || mesaId == null || mesaId.isEmpty) {
+      setState(() {
+        _haySiguienteTanda = false;
+        _haySiguienteParaTandaId = tandaId;
+      });
+      return;
+    }
+    if (_haySiguienteParaTandaId == tandaId && _haySiguienteTanda != null) {
+      return;
+    }
+    final hay = await _repository.haySiguienteTanda(
+      mesaId: mesaId,
+      tandaActualId: tandaId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _haySiguienteTanda = hay;
+      _haySiguienteParaTandaId = tandaId;
+    });
+  }
+
+  void _cerrarFichaSiAbierta() {
+    final habiaFicha = _cataAbiertaMuestraId != null || _abriendoCata;
+    if (!habiaFicha) return;
+    _cataAbiertaMuestraId = null;
+    _abriendoCata = false;
+    _autoCata?.resumePoll();
+    if (!mounted) return;
+    // Solo cerrar la ficha (ruta encima); no salir al home.
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _iniciarSiguienteTanda(TabletDashboard dashboard) async {
+    if (_iniciandoSiguienteTanda) return;
+    final tandaId = dashboard.tanda?.id;
+    final mesaId = dashboard.mesa?.id ?? dashboard.catador?.mesaId;
+    if (tandaId == null || mesaId == null || mesaId.isEmpty) return;
+
+    setState(() => _iniciandoSiguienteTanda = true);
+    try {
+      await _repository.iniciarSiguienteTanda(
+        mesaId: mesaId,
+        tandaActualId: tandaId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _haySiguienteTanda = null;
+        _haySiguienteParaTandaId = null;
+        _iniciandoSiguienteTanda = false;
+      });
+      await _reload();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _iniciandoSiguienteTanda = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_formatError(e))),
+      );
+    }
   }
 
   void _load({bool resetFiltro = true}) {
@@ -93,6 +308,7 @@ class _DashboardPageState extends State<DashboardPage> {
     final dashboard = await _dashboardFuture;
     if (!mounted) return;
     await _ensureRealtimeSubscription(dashboard.tanda?.id);
+    _ensureCatadorAutoSync(dashboard);
   }
 
   Future<void> _reloadTrasAprobar() async {
@@ -101,7 +317,47 @@ class _DashboardPageState extends State<DashboardPage> {
       _filtroInicializado = true;
       _load(resetFiltro: false);
     });
-    await _dashboardFuture;
+    final dashboard = await _dashboardFuture;
+    if (!mounted) return;
+    _ensureCatadorAutoSync(dashboard);
+    await _sincronizarEstadoTandaCompletada(dashboard);
+  }
+
+  Future<void> _confirmarSalir() async {
+    if (_saliendo) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Salir'),
+        content: const Text(
+          '¿Volver a la selección de tablets?\n\n'
+          '(Salida temporal para pruebas; en producción se bloqueará.)',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Salir'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    _saliendo = true;
+    final catadorId = widget.dispositivo.catadorId;
+    try {
+      if (catadorId != null && catadorId.isNotEmpty) {
+        await _dispositivosRepository.releaseCatador(catadorId);
+      }
+    } catch (_) {
+      // Liberar es best-effort; siempre volvemos a la cuadrícula.
+    }
+    if (!mounted) return;
+    Navigator.of(context).pop();
   }
 
   Future<void> _abrirCataMesa({
@@ -240,7 +496,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  void _abrirCata(
+  Future<void> _abrirCata(
     BuildContext context, {
     required MuestraEnTanda muestra,
     required Tanda tanda,
@@ -248,37 +504,66 @@ class _DashboardPageState extends State<DashboardPage> {
     required Categoria? categoria,
     required String? colorPrimario,
     required TabletDashboard dashboard,
-  }) {
-    final cat = categoria;
+  }) async {
+    Categoria? cat = categoria;
+    final muestraCatId = muestra.categoriaId;
+    if (muestraCatId != null &&
+        muestraCatId.isNotEmpty &&
+        muestraCatId != cat?.id) {
+      cat = await _repository.getCategoriaById(muestraCatId) ?? cat;
+    }
+    if (!mounted) return;
     if (cat == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _abriendoCata = false;
+      _cataAbiertaMuestraId = null;
+      ScaffoldMessenger.of(this.context).showSnackBar(
         const SnackBar(content: Text('No hay categoría asignada a esta tanda.')),
       );
       return;
     }
 
-    Navigator.of(context).push(
-      MaterialPageRoute<int>(
-        builder: (_) => CataPage(
-          muestra: muestra,
-          tanda: tanda,
-          categoria: cat,
-          catador: catador,
-          esPresidente: _esPresidente(dashboard),
-          mesaId: dashboard.mesa?.id ?? catador.mesaId,
-          colorPrimario: colorPrimario,
-          concursoNombre: dashboard.concurso?.nombre,
-          mesaNumero: dashboard.mesaNumero,
-          tandaNumero: dashboard.tandaNumero,
-          paisCodigo: widget.dispositivo.paisCodigo,
-          rolLabel: _rolLabel(dashboard),
-          tabletNumero: widget.dispositivo.deviceId,
-        ),
+    _abriendoCata = true;
+    _cataAbiertaMuestraId = muestra.muestraId;
+    _autoCata?.pausePoll();
+
+    final esPresidente = _esPresidente(dashboard);
+    Navigator.of(this.context)
+        .push(
+      MaterialPageRoute<Object?>(
+        builder: (_) {
+          final page = CataPage(
+            muestra: muestra,
+            tanda: tanda,
+            categoria: cat!,
+            catador: catador,
+            esPresidente: esPresidente,
+            mesaId: dashboard.mesa?.id ?? catador.mesaId,
+            colorPrimario: colorPrimario,
+            concursoNombre: dashboard.concurso?.nombre,
+            mesaNumero: dashboard.mesaNumero,
+            tandaNumero: dashboard.tandaNumero,
+            paisCodigo: widget.dispositivo.paisCodigo,
+            rolLabel: _rolLabel(dashboard),
+            tabletNumero: widget.dispositivo.deviceId,
+            tandaMuestrasTotal: dashboard.muestras.length,
+            medallaGranOro: dashboard.concurso?.granOro,
+            medallaOro: dashboard.concurso?.oro,
+            medallaPlata: dashboard.concurso?.plata,
+          );
+          return TabletViewport(child: page);
+        },
       ),
-    ).then((ordenAprobada) {
-      if (ordenAprobada != null) {
-        _reloadTrasAprobar();
+    )
+        .then((result) async {
+      _abriendoCata = false;
+      _cataAbiertaMuestraId = null;
+      if (!mounted) return;
+      if (result != null) {
+        await _reloadTrasAprobar();
+      } else {
+        await _reload();
       }
+      _autoCata?.resumePoll();
     });
   }
 
@@ -289,7 +574,40 @@ class _DashboardPageState extends State<DashboardPage> {
       child: FutureBuilder<TabletDashboard>(
         future: _dashboardFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.hasData) {
+            _ultimoDashboard = snapshot.data;
+          }
+          final dashboard = snapshot.data ?? _ultimoDashboard;
+
+          if (dashboard == null) {
+            if (snapshot.hasError) {
+              return Column(
+                children: [
+                  DashboardHeader(
+                    concursoNombre: 'Concurso',
+                    catadorNombre: widget.dispositivo.catadorNombre,
+                    rolLabel: 'Catador',
+                    mesaNumero: widget.dispositivo.mesaNumero ?? 0,
+                    tandaNumero: null,
+                    colorPrimario: null,
+                    paisCodigo: widget.dispositivo.paisCodigo,
+                    onBack: esModoPruebas ? _confirmarSalir : null,
+                    onRefresh: _reload,
+                  ),
+                  Expanded(
+                    child: _MessagePanel(
+                      title: 'Error al cargar la tanda',
+                      message: _formatError(snapshot.error!),
+                      action: FilledButton.icon(
+                        onPressed: _reload,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Reintentar'),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
             return const Center(
               child: SizedBox(
                 width: 40,
@@ -298,37 +616,6 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
             );
           }
-
-          if (snapshot.hasError) {
-            return Column(
-              children: [
-                DashboardHeader(
-                  concursoNombre: 'Concurso',
-                  catadorNombre: widget.dispositivo.catadorNombre,
-                  rolLabel: 'Catador',
-                  mesaNumero: widget.dispositivo.mesaNumero ?? 0,
-                  tandaNumero: null,
-                  colorPrimario: null,
-                  paisCodigo: widget.dispositivo.paisCodigo,
-                  onBack: () => Navigator.of(context).pop(),
-                  onRefresh: _reload,
-                ),
-                Expanded(
-                  child: _MessagePanel(
-                    title: 'Error al cargar la tanda',
-                    message: _formatError(snapshot.error!),
-                    action: FilledButton.icon(
-                      onPressed: _reload,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Reintentar'),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          }
-
-          final dashboard = snapshot.data!;
           final stats = DashboardMuestraStats.fromMuestras(dashboard.muestras);
           final muestraActiva =
               DashboardMuestraUtils.muestraActiva(dashboard.muestras);
@@ -353,13 +640,16 @@ class _DashboardPageState extends State<DashboardPage> {
               DashboardMuestraUtils.pendientes(dashboard.muestras);
 
           final esPresidente = _esPresidente(dashboard);
+
           final puedeAbrirCata = esPresidente &&
               muestraActiva != null &&
               tandaAbierta &&
               dashboard.tanda != null &&
               dashboard.catador != null &&
               DashboardMuestraUtils.estaPendienteApertura(muestraActiva);
-          final puedeEntrarCatar = muestraActiva != null &&
+          // Presidente: entrar a ficha si la muestra ya está activa.
+          final puedeContinuarCata = esPresidente &&
+              muestraActiva != null &&
               tandaAbierta &&
               dashboard.tanda != null &&
               dashboard.catador != null &&
@@ -376,192 +666,183 @@ class _DashboardPageState extends State<DashboardPage> {
                 tandaNumero: dashboard.tandaNumero,
                 colorPrimario: dashboard.concursoColorPrimario,
                 paisCodigo: widget.dispositivo.paisCodigo,
-                esPresidente: _esPresidente(dashboard),
-                mostrarModoPruebas:
-                    esModoPruebas && _esPresidente(dashboard),
-                onBack: () => Navigator.of(context).pop(),
+                esPresidente: esPresidente,
+                mostrarModoPruebas: esModoPruebas && esPresidente,
+                puesto: dashboard.catador?.codigoCatador,
+                tabletNumero: widget.dispositivo.deviceId,
+                onBack: _confirmarSalir,
+                salirConHold: !esModoPruebas,
                 onRefresh: _reload,
-                onEstadisticas: () => _mostrarEstadisticas(stats),
-                onTrucos: esModoPruebas && _esPresidente(dashboard)
+                onEstadisticas: esPresidente
+                    ? () => _mostrarEstadisticas(stats)
+                    : null,
+                onTrucos: esModoPruebas && esPresidente
                     ? () => _abrirTrucos(dashboard)
                     : null,
               ),
               Expanded(
-                child: Padding(
-                  padding: TabletLayout.screenPadding.copyWith(top: 8),
-                  child: Column(
+                child: DashboardMuestraUtils.tandaCompletada(
+                        dashboard.muestras)
+                    ? TandaCompletadaPanel(
+                        esPresidente: esPresidente,
+                        haySiguienteTanda: _haySiguienteTanda ?? false,
+                        tandaNumero: dashboard.tandaNumero,
+                        iniciando: _iniciandoSiguienteTanda,
+                        onIniciarSiguiente: esPresidente
+                            ? () => _iniciarSiguienteTanda(dashboard)
+                            : null,
+                      )
+                    : !esPresidente
+                    ? CatadorEsperaPanel(
+                        catadas: stats.catadas,
+                        total: stats.total,
+                        proximaOrden: muestraActiva?.orden,
+                        muestrasCatadas: DashboardMuestraUtils.filtrar(
+                          dashboard.muestras,
+                          MuestraFiltro.catadas,
+                        ),
+                        categoriaFallback: categoriaNombre,
+                      )
+                    : Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _DashboardInicioTopInfoBar(
-                        colorPrimario: dashboard.concursoColorPrimario,
-                        tandaNumero: dashboard.tandaNumero,
-                        mesaNumero: dashboard.mesaNumero,
-                        ordenActual: muestraActiva?.orden ?? 0,
-                        ordenTotal: stats.total,
-                        categoriaNombre: categoriaNombre,
-                      ),
-                      const SizedBox(height: 8),
+                      // Mitad izquierda: hero + pendientes (mismo ancho).
                       Expanded(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                        child: Column(
                           children: [
+                            dashboard.tanda != null
+                                ? MuestraHeroCard(
+                                    muestra: muestraActiva,
+                                    mesaNumero: dashboard.mesaNumero,
+                                    tandaNumero: dashboard.tandaNumero,
+                                    categoriaNombre: categoriaNombre,
+                                    tandaAbierta: tandaAbierta,
+                                    stats: stats,
+                                    colorPrimario:
+                                        dashboard.concursoColorPrimario,
+                                    esPresidente: esPresidente,
+                                    showStats: false,
+                                    hideSideMeta: true,
+                                    flexibleHeight: true,
+                                    onAbrirCata: puedeAbrirCata
+                                        ? () => _abrirCataMesa(
+                                              muestra: muestraActiva,
+                                              dashboard: dashboard,
+                                            )
+                                        : null,
+                                    onEntrarCatar: puedeContinuarCata
+                                        ? () => _abrirCata(
+                                              context,
+                                              muestra: muestraActiva,
+                                              tanda: dashboard.tanda!,
+                                              catador: dashboard.catador!,
+                                              categoria:
+                                                  dashboard.categoria,
+                                              colorPrimario: dashboard
+                                                  .concursoColorPrimario,
+                                              dashboard: dashboard,
+                                            )
+                                        : null,
+                                  )
+                                : const _SinTandaCard(),
+                            const SizedBox(height: 6),
                             Expanded(
-                              flex: 4,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: Colors.black.withValues(alpha: 0.1),
-                                  ),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: Column(
-                                    children: [
-                                      if (dashboard.tanda != null)
-                                        MuestraHeroCard(
-                                          muestra: muestraActiva,
-                                          mesaNumero: dashboard.mesaNumero,
-                                          tandaNumero: dashboard.tandaNumero,
-                                          categoriaNombre: categoriaNombre,
-                                          tandaAbierta: tandaAbierta,
-                                          stats: stats,
-                                          colorPrimario:
-                                              dashboard.concursoColorPrimario,
-                                          esPresidente: esPresidente,
-                                          showStats: false,
-                                          hideSideMeta: true,
-                                          flexibleHeight: true,
-                                          onAbrirCata: puedeAbrirCata
-                                              ? () => _abrirCataMesa(
-                                                    muestra: muestraActiva,
-                                                    dashboard: dashboard,
-                                                  )
-                                              : null,
-                                          onEntrarCatar: puedeEntrarCatar
-                                              ? () => _abrirCata(
-                                                    context,
-                                                    muestra: muestraActiva,
-                                                    tanda: dashboard.tanda!,
-                                                    catador:
-                                                        dashboard.catador!,
-                                                    categoria:
-                                                        dashboard.categoria,
-                                                    colorPrimario: dashboard
-                                                        .concursoColorPrimario,
-                                                    dashboard: dashboard,
-                                                  )
-                                              : null,
-                                        )
-                                      else
-                                        const _SinTandaCard(),
-                                      const SizedBox(height: 8),
-                                      Expanded(
-                                        child: MuestrasPendientesList(
-                                          muestras: muestrasPendientes,
-                                          colorPrimario:
-                                              dashboard.concursoColorPrimario,
-                                          onMuestraTap:
-                                              dashboard.tanda != null &&
-                                                      dashboard.catador != null
-                                                  ? (muestra) =>
-                                                      _tapMuestraPendiente(
-                                                        muestra,
-                                                        dashboard,
-                                                        esPresidente,
-                                                      )
-                                                  : null,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                              ),
-                              child: VerticalDivider(
-                                width: 2,
-                                thickness: 2,
-                                color: Colors.grey.shade300,
-                              ),
-                            ),
-                            Expanded(
-                              flex: 6,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: Colors.black.withValues(alpha: 0.1),
-                                  ),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      _DashboardStatsPanel(
-                                        stats: stats,
-                                        colorPrimario:
-                                            dashboard.concursoColorPrimario,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      MuestrasFilterTabs(
-                                        filtroActivo: filtro,
-                                        catadasCount: stats.catadas,
-                                        descalificadasCount: stats
-                                                .descalificadas +
-                                            stats.pospuestas,
-                                        colorPrimario:
-                                            dashboard.concursoColorPrimario,
-                                        onChanged: (nuevo) =>
-                                            setState(() => _filtro = nuevo),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Expanded(
-                                        child: dashboard.tanda != null &&
-                                                dashboard.catador != null
-                                            ? MuestrasList(
-                                                muestras: muestrasFiltradas,
-                                                filtro: filtro,
-                                                colorPrimario: dashboard
-                                                    .concursoColorPrimario,
-                                                onMuestraTap: (muestra) =>
-                                                    _abrirCata(
-                                                  context,
-                                                  muestra: muestra,
-                                                  tanda: dashboard.tanda!,
-                                                  catador: dashboard.catador!,
-                                                  categoria:
-                                                      dashboard.categoria,
-                                                  colorPrimario: dashboard
-                                                      .concursoColorPrimario,
-                                                  dashboard: dashboard,
-                                                ),
-                                              )
-                                            : Center(
-                                                child: Text(
-                                                  dashboard.tanda == null
-                                                      ? 'Asigna una tanda para ver las muestras.'
-                                                      : 'No hay catador asignado.',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodyMedium,
-                                                  textAlign: TextAlign.center,
-                                                ),
-                                              ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                              child: MuestrasPendientesList(
+                                muestras: muestrasPendientes,
+                                colorPrimario:
+                                    dashboard.concursoColorPrimario,
+                                categoriaNombre: categoriaNombre,
+                                muestraDestacadaId:
+                                    muestraActiva?.muestraId,
+                                destacadaEnCurso: muestraActiva != null &&
+                                    DashboardMuestraUtils.estaActiva(
+                                      muestraActiva,
+                                    ),
+                                onMuestraTap:
+                                    dashboard.tanda != null &&
+                                            dashboard.catador != null
+                                        ? (muestra) =>
+                                            _tapMuestraPendiente(
+                                              muestra,
+                                              dashboard,
+                                              esPresidente,
+                                            )
+                                        : null,
                               ),
                             ),
                           ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Mitad derecha: catadas / descalificadas.
+                      Expanded(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: MuestrasList.verde,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: MuestrasList.verdeClaro,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.stretch,
+                              children: [
+                                MuestrasFilterTabs(
+                                  filtroActivo: filtro,
+                                  catadasCount: stats.catadas,
+                                  descalificadasCount:
+                                      stats.descalificadas +
+                                          stats.pospuestas,
+                                  colorPrimario:
+                                      dashboard.concursoColorPrimario,
+                                  onChanged: (nuevo) =>
+                                      setState(() => _filtro = nuevo),
+                                ),
+                                const SizedBox(height: 3),
+                                Expanded(
+                                  child: dashboard.tanda != null &&
+                                          dashboard.catador != null
+                                      ? MuestrasList(
+                                          muestras: muestrasFiltradas,
+                                          filtro: filtro,
+                                          colorPrimario: dashboard
+                                              .concursoColorPrimario,
+                                          categoriaFallback:
+                                              categoriaNombre,
+                                          onMuestraTap: (muestra) =>
+                                              _abrirCata(
+                                            context,
+                                            muestra: muestra,
+                                            tanda: dashboard.tanda!,
+                                            catador: dashboard.catador!,
+                                            categoria:
+                                                dashboard.categoria,
+                                            colorPrimario: dashboard
+                                                .concursoColorPrimario,
+                                            dashboard: dashboard,
+                                          ),
+                                        )
+                                      : Center(
+                                          child: Text(
+                                            dashboard.tanda == null
+                                                ? 'Asigna una tanda para ver las muestras.'
+                                                : 'No hay catador asignado.',
+                                            style: DashboardType.body(
+                                              color: Colors.white70,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -588,178 +869,22 @@ class _SinTandaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: MuestraHeroCard.height,
+      width: double.infinity,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: Colors.grey.shade300,
+          color: CataV2Theme.superficie,
           borderRadius: BorderRadius.circular(TabletLayout.slotRadius),
+          border: Border.all(color: CataV2Theme.borde),
         ),
-        child: const Center(
-          child: Text(
-            'No hay tanda asignada a esta mesa.',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DashboardInicioTopInfoBar extends StatelessWidget {
-  const _DashboardInicioTopInfoBar({
-    required this.colorPrimario,
-    required this.tandaNumero,
-    required this.mesaNumero,
-    required this.ordenActual,
-    required this.ordenTotal,
-    required this.categoriaNombre,
-  });
-
-  final String? colorPrimario;
-  final int? tandaNumero;
-  final int mesaNumero;
-  final int ordenActual;
-  final int ordenTotal;
-  final String categoriaNombre;
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = DashboardColors.primario(colorPrimario);
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFFE8F5E9),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Center(
           child: Text(
-            'Tanda ${tandaNumero ?? '—'} · Mesa $mesaNumero · Orden $ordenActual/$ordenTotal · ${categoriaNombre.toUpperCase()}',
-            style: VirtusTextStyles.plain(
-              color: accent,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              height: 1.1,
-              letterSpacing: 0.2,
+            'No hay tanda asignada a esta mesa.',
+            style: DashboardType.body(
+              color: CataV2Theme.textoSecundario,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
           ),
         ),
       ),
-    );
-  }
-}
-
-class _DashboardStatsPanel extends StatelessWidget {
-  const _DashboardStatsPanel({
-    required this.stats,
-    required this.colorPrimario,
-  });
-
-  final DashboardMuestraStats stats;
-  final String? colorPrimario;
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = DashboardColors.primario(colorPrimario);
-    final labelColor = Colors.black.withValues(alpha: 0.55);
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F8F8),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-        child: Row(
-          children: [
-            Expanded(
-              child: _StatChip(
-                label: 'Quedan',
-                value: '${stats.quedan}',
-                accent: accent,
-                labelColor: labelColor,
-              ),
-            ),
-            Expanded(
-              child: _StatChip(
-                label: 'Catadas',
-                value: '${stats.catadas}',
-                accent: accent,
-                labelColor: labelColor,
-              ),
-            ),
-            Expanded(
-              child: _StatChip(
-                label: 'Posp.',
-                value: '${stats.pospuestas}',
-                accent: accent,
-                labelColor: labelColor,
-              ),
-            ),
-            Expanded(
-              child: _StatChip(
-                label: 'Descalif.',
-                value: '${stats.descalificadas}',
-                accent: accent,
-                labelColor: labelColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatChip extends StatelessWidget {
-  const _StatChip({
-    required this.label,
-    required this.value,
-    required this.accent,
-    required this.labelColor,
-  });
-
-  final String label;
-  final String value;
-  final Color accent;
-  final Color labelColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: VirtusTextStyles.plain(
-            fontSize: 10,
-            fontWeight: FontWeight.w800,
-            color: labelColor,
-            letterSpacing: 0.2,
-          ),
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: VirtusTextStyles.plain(
-            color: Colors.black87,
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.2,
-          ),
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
     );
   }
 }

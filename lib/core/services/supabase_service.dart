@@ -122,11 +122,14 @@ class SupabaseService {
           )
         : const <MuestraEnTanda>[];
 
-    var categoria = tanda?.categoriaId != null
-        ? await _getCategoriaById(tanda!.categoriaId!)
-        : null;
-    if (categoria == null && tanda != null) {
-      categoria = await _resolveCategoriaFromTanda(tanda.id);
+    // Prioridad: categoría de la TANDA (define la cata); luego muestra.
+    Categoria? categoria;
+    if (tanda != null) {
+      if (tanda.categoriaId != null && tanda.categoriaId!.isNotEmpty) {
+        categoria = await getCategoriaById(tanda.categoriaId!);
+      }
+      categoria ??= await _resolveCategoriaDesdeMuestras(muestras);
+      categoria ??= await _resolveCategoriaFromTanda(tanda.id);
     }
 
     final resolvedLabel = mesa?.numero ?? mesaNumero ?? deviceId ?? 0;
@@ -348,6 +351,23 @@ class SupabaseService {
     return null;
   }
 
+  Future<Categoria?> _resolveCategoriaDesdeMuestras(
+    List<MuestraEnTanda> muestras,
+  ) async {
+    MuestraEnTanda? preferida;
+    for (final m in muestras) {
+      final e = (m.estado ?? '').toLowerCase().trim();
+      if (e == 'activa' || e == 'en_curso') {
+        preferida = m;
+        break;
+      }
+    }
+    preferida ??= muestras.isEmpty ? null : muestras.first;
+    final id = preferida?.categoriaId;
+    if (id == null || id.isEmpty) return null;
+    return getCategoriaById(id);
+  }
+
   Future<Categoria?> _resolveCategoriaFromTanda(String tandaId) async {
     final link = await _client
         .from('tanda_muestras')
@@ -366,10 +386,10 @@ class SupabaseService {
     final categoriaId = JsonHelpers.uuid(muestra?['categoria_id']);
     if (categoriaId == null) return null;
 
-    return _getCategoriaById(categoriaId);
+    return getCategoriaById(categoriaId);
   }
 
-  Future<Categoria?> _getCategoriaById(String categoriaId) async {
+  Future<Categoria?> getCategoriaById(String categoriaId) async {
     final row = await _client
         .from('categorias')
         .select()
@@ -400,11 +420,36 @@ class SupabaseService {
     final muestrasRaw =
         await _client.from('muestras').select().inFilter('id', muestraIds);
 
-    final muestrasById = <String, Map<String, dynamic>>{
-      for (final item in muestrasRaw as List)
-        if (item is Map<String, dynamic>)
-          JsonHelpers.uuid(item['id']) ?? '': item,
-    };
+    final muestrasById = <String, Map<String, dynamic>>{};
+    for (final item in muestrasRaw as List) {
+      if (item is! Map<String, dynamic>) continue;
+      final id = JsonHelpers.uuid(item['id']) ?? item['id']?.toString();
+      if (id == null || id.isEmpty) continue;
+      muestrasById[id] = item;
+    }
+
+    final categoriaIds = <String>{};
+    for (final raw in muestrasById.values) {
+      final cid = JsonHelpers.uuid(raw['categoria_id']) ??
+          raw['categoria_id']?.toString();
+      if (cid != null && cid.isNotEmpty) categoriaIds.add(cid);
+    }
+    final nombresCategoria = <String, String>{};
+    if (categoriaIds.isNotEmpty) {
+      final catsRaw = await _client
+          .from('categorias')
+          .select('id, nombre')
+          .inFilter('id', categoriaIds.toList());
+      for (final item in catsRaw as List) {
+        if (item is! Map<String, dynamic>) continue;
+        final id =
+            JsonHelpers.uuid(item['id']) ?? item['id']?.toString() ?? '';
+        final nombre = JsonHelpers.stringOrEmpty(item['nombre']);
+        if (id.isNotEmpty && nombre.isNotEmpty) {
+          nombresCategoria[id] = nombre;
+        }
+      }
+    }
 
     final puntuaciones = await _getPuntuacionesPorMuestra(
       tandaId: tandaId,
@@ -420,6 +465,7 @@ class SupabaseService {
           JsonHelpers.string(row.estado)?.toLowerCase().trim() ?? '';
       final muestraAprobada =
           estadoMuestra == 'completada' || estadoMuestra == 'finalizada';
+      final catId = muestra?.categoriaId;
       return MuestraEnTanda.fromTandaMuestra(
         orden: row.orden,
         estado: row.estado,
@@ -429,6 +475,8 @@ class SupabaseService {
         codigo: muestra?.codigo,
         codigoCiego: JsonHelpers.string(muestraRaw?['codigo_ciego']),
         codigoTexto: JsonHelpers.string(muestraRaw?['codigo_texto']),
+        categoriaId: catId,
+        categoriaNombre: catId == null ? null : nombresCategoria[catId],
         categoriaCata: muestra?.categoriaCata,
         incidenciaMotivo: row.incidenciaMotivo,
       ).copyWith(
@@ -493,6 +541,78 @@ class SupabaseService {
     }
 
     return result;
+  }
+
+  /// Cierra [tandaActualId] y abre la siguiente pendiente de la misma mesa.
+  /// Devuelve la tanda abierta o `null` si no hay más (fin de jornada).
+  Future<Tanda?> iniciarSiguienteTanda({
+    required String mesaId,
+    required String tandaActualId,
+  }) async {
+    final mesaDbId = _toDbId(mesaId);
+    final actualDbId = _toDbId(tandaActualId);
+
+    final actual = await _client
+        .from('tandas')
+        .select()
+        .eq('id', actualDbId)
+        .maybeSingle();
+    if (actual == null) {
+      throw StateError('No se encontró la tanda actual.');
+    }
+    final numeroActual = JsonHelpers.intValue(actual['numero']) ?? 0;
+
+    await _client.from('tandas').update({
+      'estado': 'finalizada',
+      'activa': false,
+    }).eq('id', actualDbId);
+
+    final siguiente = await _client
+        .from('tandas')
+        .select()
+        .eq('mesa_id', mesaDbId)
+        .gt('numero', numeroActual)
+        .order('numero', ascending: true)
+        .limit(1)
+        .maybeSingle();
+
+    if (siguiente == null) return null;
+
+    final siguienteId = _toDbId(siguiente['id']?.toString() ?? '');
+    await _client.from('tandas').update({
+      'estado': 'abierta',
+      'activa': true,
+    }).eq('id', siguienteId);
+
+    final abierta = await _client
+        .from('tandas')
+        .select()
+        .eq('id', siguienteId)
+        .maybeSingle();
+    if (abierta == null) return null;
+    return Tanda.fromJson(abierta);
+  }
+
+  /// ¿Hay otra tanda preparada después de [tandaActualId] en la mesa?
+  Future<bool> haySiguienteTanda({
+    required String mesaId,
+    required String tandaActualId,
+  }) async {
+    final actual = await _client
+        .from('tandas')
+        .select('numero')
+        .eq('id', _toDbId(tandaActualId))
+        .maybeSingle();
+    if (actual == null) return false;
+    final numeroActual = JsonHelpers.intValue(actual['numero']) ?? 0;
+    final siguiente = await _client
+        .from('tandas')
+        .select('id')
+        .eq('mesa_id', _toDbId(mesaId))
+        .gt('numero', numeroActual)
+        .limit(1)
+        .maybeSingle();
+    return siguiente != null;
   }
 
   dynamic _toDbId(String id) => int.tryParse(id) ?? id;

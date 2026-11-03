@@ -138,7 +138,6 @@ class _CataAprobacionModalState extends State<CataAprobacionModal> {
         CataAprobacionDialog(
           resumen: resumen,
           aprobando: _aprobando,
-          onVolver: widget.onVolver,
           onRevisar: widget.onRevisar,
           onAprobar: _aprobar,
           onAprobarAdmin: _aprobar,
