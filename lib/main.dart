@@ -4,19 +4,14 @@ import 'package:virtus2027/app/app.dart';
 import 'package:virtus2027/config/supabase_config.dart';
 import 'package:virtus2027/core/layout/tablet_layout.dart';
 import 'package:virtus2027/core/layout/tablet_viewport.dart';
+import 'package:virtus2027/core/services/servidor_estado.dart';
 import 'package:virtus2027/core/theme/tablet_theme.dart';
+import 'package:virtus2027/core/theme/virtus_system_ui.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: Color(0xFF2d4a2d),
-      systemNavigationBarIconBrightness: Brightness.light,
-    ),
-  );
+  SystemChrome.setSystemUIOverlayStyle(kVirtusSystemUi);
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
@@ -30,6 +25,7 @@ Future<void> main() async {
     return;
   }
 
+  ServidorEstado.instance.start();
   runApp(const VirtusApp());
 }
 

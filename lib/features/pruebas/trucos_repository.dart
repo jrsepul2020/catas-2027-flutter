@@ -23,17 +23,12 @@ class TrucosRepository {
   static bool esMuestraDemo(MuestraEnTanda? muestra) =>
       muestra != null && muestra.esDemo;
 
-  FichaDefinicion _fichaDeCategoria(Categoria? categoria) {
-    final raw = categoria?.ficha;
-    if (raw != null && raw.isNotEmpty) {
-      try {
-        return FichaDefinicion.fromJson(raw);
-      } catch (_) {
-        // Fallback a la ficha canónica.
-      }
-    }
-    return FichaDefinicion.vinosTranquilos();
-  }
+  FichaDefinicion _fichaDeCategoria(Categoria? categoria) =>
+      FichaDefinicion.deCategoria(
+        categoria?.ficha,
+        nombre: categoria?.nombre,
+        codigo: categoria?.codigo,
+      );
 
   Map<String, num> _scoresAleatorios(FichaDefinicion ficha) {
     final scores = <String, num>{};
