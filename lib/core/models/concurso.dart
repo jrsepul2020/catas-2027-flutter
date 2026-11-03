@@ -12,6 +12,9 @@ class Concurso {
     this.fechaFin,
     this.createdAt,
     this.updatedAt,
+    this.granOro = 92,
+    this.oro = 85,
+    this.plata = 82,
   });
 
   final String id;
@@ -25,6 +28,11 @@ class Concurso {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
+  /// Umbrales de medalla desde `concursos` (Supabase).
+  final double granOro;
+  final double oro;
+  final double plata;
+
   factory Concurso.fromJson(Map<String, dynamic> json) {
     return Concurso(
       id: JsonHelpers.uuid(json['id']) ?? '',
@@ -37,6 +45,9 @@ class Concurso {
       fechaFin: JsonHelpers.dateTime(json['fecha_fin']),
       createdAt: JsonHelpers.dateTime(json['created_at']),
       updatedAt: JsonHelpers.dateTime(json['updated_at']),
+      granOro: JsonHelpers.doubleValue(json['gran_oro']) ?? 92,
+      oro: JsonHelpers.doubleValue(json['oro']) ?? 85,
+      plata: JsonHelpers.doubleValue(json['plata']) ?? 82,
     );
   }
 
@@ -52,6 +63,9 @@ class Concurso {
       'fecha_fin': fechaFin?.toIso8601String(),
       'created_at': createdAt?.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
+      'gran_oro': granOro,
+      'oro': oro,
+      'plata': plata,
     };
   }
 }

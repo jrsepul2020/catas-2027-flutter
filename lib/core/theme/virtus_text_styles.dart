@@ -8,6 +8,7 @@ abstract final class VirtusTextStyles {
     FontWeight? fontWeight,
     double? height,
     double? letterSpacing,
+    String? fontFamily,
   }) {
     return TextStyle(
       inherit: false,
@@ -16,6 +17,7 @@ abstract final class VirtusTextStyles {
       fontWeight: fontWeight,
       height: height,
       letterSpacing: letterSpacing,
+      fontFamily: fontFamily,
       decoration: TextDecoration.none,
       decorationThickness: 0,
       decorationColor: Colors.transparent,
@@ -30,6 +32,7 @@ abstract final class VirtusTextStyles {
     FontWeight? fontWeight,
     double? height,
     double? letterSpacing,
+    String? fontFamily,
   }) {
     return TextSpan(
       text: text,
@@ -39,6 +42,7 @@ abstract final class VirtusTextStyles {
         fontWeight: fontWeight,
         height: height,
         letterSpacing: letterSpacing,
+        fontFamily: fontFamily,
       ),
     );
   }

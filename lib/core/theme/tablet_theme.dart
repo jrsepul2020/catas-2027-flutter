@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:virtus2027/core/layout/tablet_layout.dart';
 import 'package:virtus2027/core/theme/virtus_colors.dart';
+import 'package:virtus2027/core/theme/virtus_system_ui.dart';
 
 abstract final class TabletTheme {
   /// Estilo base sin subrayado, compatible con TextStyle.lerp de Material.
@@ -136,6 +137,7 @@ abstract final class TabletTheme {
       appBarTheme: AppBarTheme(
         backgroundColor: VirtusColors.primario,
         foregroundColor: Colors.white,
+        systemOverlayStyle: kVirtusSystemUi,
         titleTextStyle: baseStyle(
           fontSize: TabletLayout.titleFontSize,
           fontWeight: FontWeight.w700,

@@ -15,4 +15,8 @@ abstract final class CataColors {
   static const medallaFondo = Color(0xFFECEFF1);
   static const medallaTexto = Color(0xFF78909C);
   static const faltanCriterios = Color(0xFF546E7A);
+  /// Fondo panel «faltan criterios» (rojo claro).
+  static const faltanCriteriosFondo = Color(0xFFFFEBEE);
+  /// Fondo panel criterios completos (verde pastel discreto).
+  static const criteriosCompletosFondo = Color(0xFFE8F5E9);
 }

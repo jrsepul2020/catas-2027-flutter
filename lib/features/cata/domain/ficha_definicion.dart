@@ -1,3 +1,5 @@
+import 'dart:math';
+
 class FichaCriterio {
   const FichaCriterio({
     required this.id,
@@ -107,6 +109,86 @@ class FichaDefinicion {
   List<FichaCriterio> get todosLosCriterios =>
       grupos.expand((grupo) => grupo.criterios).toList();
 
+  /// Ficha desde `categorias.ficha` (JSON en Supabase).
+  /// Si falta o está vacía, elige factory canónica por nombre/código.
+  factory FichaDefinicion.deCategoria(
+    Map<String, dynamic>? fichaJson, {
+    String? nombre,
+    String? codigo,
+  }) {
+    if (fichaJson != null && fichaJson.isNotEmpty) {
+      try {
+        final ficha = FichaDefinicion.fromJson(fichaJson);
+        if (ficha.grupos.isNotEmpty) return ficha;
+      } catch (_) {
+        // Fallback abajo.
+      }
+    }
+    return FichaDefinicion.canonicaPara(
+      nombre: nombre,
+      codigo: codigo,
+    );
+  }
+
+  /// Factory canónica según categoría (sin JSON de BD).
+  factory FichaDefinicion.canonicaPara({String? nombre, String? codigo}) {
+    final cod = (codigo ?? '').toLowerCase().trim();
+    final nom = (nombre ?? '').toLowerCase();
+    if (cod == 'ao' ||
+        nom.contains('aove') ||
+        nom.contains('aceite') ||
+        nom.contains('oliva')) {
+      return FichaDefinicion.aoves();
+    }
+    if (cod == 've' || nom.contains('espumos') || nom.contains('cava')) {
+      return FichaDefinicion.espumosos();
+    }
+    if (cod == 'vg' ||
+        nom.contains('generos') ||
+        nom.contains('espirituos') ||
+        nom.contains('licor')) {
+      return FichaDefinicion.generososEspirituosos();
+    }
+    return FichaDefinicion.vinosTranquilos();
+  }
+
+  /// Relleno de prueba: total aleatorio entre [82, 100] (valores válidos de cada criterio).
+  Map<String, num> scoresPruebaSobre87() {
+    final criterios = todosLosCriterios
+        .where((c) => c.valoresDisponibles.isNotEmpty)
+        .toList();
+    if (criterios.isEmpty) return {};
+
+    // Empieza en máximo de cada criterio.
+    final scores = <String, num>{
+      for (final c in criterios) c.id: c.valoresDisponibles.first,
+    };
+
+    num suma() => scores.values.fold<num>(0, (a, b) => a + b);
+
+    final maxTotal = suma().round();
+    final hi = maxTotal.clamp(0, 100);
+    final lo = hi < 82 ? hi : 82;
+    if (lo >= hi) return scores;
+
+    final rnd = Random();
+    final objetivo = lo + rnd.nextInt(hi - lo + 1);
+
+    // Baja criterios al azar hasta llegar al objetivo (o no poder bajar más).
+    var guard = 0;
+    while (suma() > objetivo && guard < 800) {
+      guard++;
+      final c = criterios[rnd.nextInt(criterios.length)];
+      final vals = c.valoresDisponibles;
+      final actual = scores[c.id]!.round();
+      final idx = vals.indexOf(actual);
+      if (idx < 0 || idx >= vals.length - 1) continue;
+      scores[c.id] = vals[idx + 1];
+    }
+
+    return scores;
+  }
+
   factory FichaDefinicion.fromJson(Map<String, dynamic> json) {
     final gruposRaw = json['grupos'];
     final grupos = <FichaGrupo>[];
@@ -145,6 +227,269 @@ class FichaDefinicion {
       }
     }
     return defaults;
+  }
+
+  /// Generosos y Espirituosos (`categorias.codigo = vg`). Total máx. 100.
+  factory FichaDefinicion.generososEspirituosos() {
+    return FichaDefinicion.fromJson(const {
+      'total_min': 82,
+      'total_max': 100,
+      'grupos': [
+        {
+          'nombre': 'VISTA',
+          'criterios': [
+            {
+              'id': 'limpidez',
+              'label': 'Limpidez',
+              'valores': [5, 3, 1],
+              'columnas': 5,
+            },
+            {
+              'id': 'color_viscosidad',
+              'label': 'Color y viscosidad',
+              'valores': [5, 4, 3, 2, 1],
+            },
+          ],
+        },
+        {
+          'nombre': 'OLFATO',
+          'criterios': [
+            {
+              'id': 'o_intensidad',
+              'label': 'Intensidad aromática',
+              'valores': [10, 9, 8, 7, 6],
+            },
+            {
+              'id': 'o_pureza',
+              'label': 'Pureza',
+              'valores': [10, 9, 8, 7, 6],
+            },
+            {
+              'id': 'o_complejidad',
+              'label': 'Complejidad aromática',
+              'valores': [10, 9, 8, 7, 6],
+            },
+          ],
+        },
+        {
+          'nombre': 'SABOR',
+          'criterios': [
+            {
+              'id': 's_pureza',
+              'label': 'Pureza',
+              'valores': [10, 9, 8, 7, 6],
+            },
+            {
+              'id': 's_intensidad',
+              'label': 'Intensidad de los sabores',
+              'valores': [10, 9, 8, 7, 6],
+            },
+            {
+              'id': 's_estructura',
+              'label': 'Estructura y complejidad',
+              'valores': [10, 9, 8, 7, 6],
+            },
+            {
+              'id': 's_persistencia',
+              'label': 'Persistencia',
+              'valores': [10, 9, 8, 7, 6],
+            },
+          ],
+        },
+        {
+          'nombre': 'FINAL',
+          'criterios': [
+            {
+              'id': 'g_equilibrio',
+              'label': 'Equilibrio y armonía',
+              'valores': [10, 9, 8, 7, 6],
+            },
+            {
+              'id': 'g_valoracion',
+              'label': 'Valoración general',
+              'valores': [10, 9, 8, 7, 6],
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  /// Espumosos (`categorias.codigo = ve`). Total máx. 100.
+  factory FichaDefinicion.espumosos() {
+    return FichaDefinicion.fromJson(const {
+      'total_min': 82,
+      'total_max': 100,
+      'grupos': [
+        {
+          'nombre': 'VISTA',
+          'criterios': [
+            {
+              'id': 'limpidez',
+              'label': 'Limpidez',
+              'valores': [5, 3, 1],
+              'columnas': 5,
+            },
+            {
+              'id': 'color_matices',
+              'label': 'Color y matices',
+              'valores': [5, 4, 3, 2, 1],
+            },
+            {
+              'id': 'efervescencia',
+              'label': 'Efervescencia',
+              'valores': [5, 4, 3, 2, 1],
+            },
+          ],
+        },
+        {
+          'nombre': 'OLFATO',
+          'criterios': [
+            {
+              'id': 'o_pureza',
+              'label': 'Pureza',
+              'valores': [10, 9, 8, 7, 6],
+            },
+            {
+              'id': 'o_intensidad',
+              'label': 'Intensidad aromática',
+              'valores': [10, 9, 8, 7, 6],
+            },
+            {
+              'id': 'o_complejidad',
+              'label': 'Complejidad aromática',
+              'valores': [10, 9, 8, 7, 6],
+            },
+          ],
+        },
+        {
+          'nombre': 'SABOR',
+          'criterios': [
+            {
+              'id': 's_efervescencia',
+              'label': 'Efervescencia',
+              'valores': [5, 4, 3, 2, 1],
+            },
+            {
+              'id': 's_pureza',
+              'label': 'Pureza',
+              'valores': [10, 9, 8, 7, 6],
+            },
+            {
+              'id': 's_intensidad',
+              'label': 'Intensidad de los sabores',
+              'valores': [10, 9, 8, 7, 6],
+            },
+            {
+              'id': 's_complejidad',
+              'label': 'Complejidad y persistencia',
+              'valores': [10, 9, 8, 7, 6],
+            },
+          ],
+        },
+        {
+          'nombre': 'FINAL',
+          'criterios': [
+            {
+              'id': 'g_equilibrio',
+              'label': 'Equilibrio y armonía',
+              'valores': [10, 9, 8, 7, 6],
+            },
+            {
+              'id': 'g_valoracion',
+              'label': 'Valoración general',
+              'valores': [10, 9, 8, 7, 6],
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  /// Ficha canónica AOVE (Virtus tablet / `categorias.codigo = ao`).
+  /// Olfato 34 + Gusto 46 + Final 20 = 100.
+  factory FichaDefinicion.aoves() {
+    return FichaDefinicion.fromJson(const {
+      'total_min': 80,
+      'total_max': 100,
+      'grupos': [
+        {
+          'nombre': 'OLFATO',
+          'criterios': [
+            {
+              'id': 'o_frutado',
+              'label': 'Frutado aceituna',
+              'valores': [6, 5, 3, 1, 0],
+            },
+            {
+              'id': 'o_otros',
+              'label': 'Otros frutos',
+              'valores': [4, 3, 2, 1, 0],
+            },
+            {
+              'id': 'o_verde',
+              'label': 'Verde, hierba, hoja',
+              'valores': [4, 3, 2, 1, 0],
+            },
+            {
+              'id': 'o_armonia',
+              'label': 'Armonía',
+              'valores': [20, 15, 10, 5, 0],
+            },
+          ],
+        },
+        {
+          'nombre': 'GUSTO',
+          'criterios': [
+            {
+              'id': 'g_frutado',
+              'label': 'Frutado aceituna',
+              'valores': [10, 8, 5, 2, 0],
+            },
+            {
+              'id': 'g_dulce',
+              'label': 'Dulce',
+              'valores': [4, 3, 2, 1, 0],
+            },
+            {
+              'id': 'g_amargo',
+              'label': 'Amargo',
+              'valores': [4, 3, 2, 1, 0],
+            },
+            {
+              'id': 'g_picante',
+              'label': 'Picante',
+              'valores': [4, 3, 2, 1, 0],
+            },
+            {
+              'id': 'g_verde',
+              'label': 'Verde, hierba, hoja',
+              'valores': [4, 3, 2, 1, 0],
+            },
+            {
+              'id': 'g_armonia',
+              'label': 'Armonía',
+              'valores': [20, 15, 10, 5, 0],
+            },
+          ],
+        },
+        {
+          'nombre': 'FINAL',
+          'criterios': [
+            {
+              'id': 'f_armonia',
+              'label': 'Armonía',
+              'valores': [10, 8, 5, 2, 0],
+            },
+            {
+              'id': 'f_persistencia',
+              'label': 'Persistencia',
+              'valores': [10, 8, 5, 2, 0],
+            },
+          ],
+        },
+      ],
+    });
   }
 
   /// Ficha canónica de puntuación (Vinos Tranquilos — referencia Virtus tablet).
@@ -289,7 +634,7 @@ class FichaDefinicion {
     final n = nombre.toLowerCase().trim();
     if (n.contains('vista') || n.contains('apariencia')) return 'apariencia';
     if (n.contains('olfato') || n.contains('olor')) return 'olor';
-    if (n.contains('sabor')) return 'sabor';
+    if (n.contains('sabor') || n.contains('gusto')) return 'sabor';
     if (n.contains('global') || n.contains('final')) return 'global';
     return n;
   }

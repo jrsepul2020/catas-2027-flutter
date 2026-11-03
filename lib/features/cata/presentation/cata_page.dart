@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:virtus2027/core/layout/tablet_layout.dart';
@@ -7,16 +9,15 @@ import 'package:virtus2027/core/models/tanda.dart';
 import 'package:virtus2027/features/cata/data/cata_page_realtime_sync.dart';
 import 'package:virtus2027/features/cata/data/cata_repository.dart';
 import 'package:virtus2027/features/cata/domain/ficha_definicion.dart';
-import 'package:virtus2027/features/cata/presentation/utils/cata_colors.dart';
-import 'package:virtus2027/features/cata/presentation/utils/cata_form_layout.dart';
 import 'package:virtus2027/config/app_mode.dart';
 import 'package:virtus2027/features/cata/presentation/widgets/cata_aprobacion_modal.dart';
 import 'package:virtus2027/features/cata/presentation/widgets/cata_espera_aprobacion_dialog.dart';
-import 'package:virtus2027/features/cata/presentation/widgets/cata_header_bar.dart';
-import 'package:virtus2027/features/cata/presentation/widgets/cata_info_panel.dart';
-import 'package:virtus2027/features/cata/presentation/widgets/cata_resumen_panel.dart';
-import 'package:virtus2027/features/cata/presentation/widgets/grupo_criterios.dart';
+import 'package:virtus2027/features/cata/presentation/utils/cata_grupo_style.dart';
+import 'package:virtus2027/features/cata/presentation/v2/cata_form_v2.dart';
+import 'package:virtus2027/features/cata/presentation/v2/cata_header_v2.dart';
+import 'package:virtus2027/features/cata/presentation/v2/cata_v2_theme.dart';
 import 'package:virtus2027/features/dashboard/domain/muestra_en_tanda.dart';
+import 'package:virtus2027/features/home/data/dispositivos_repository.dart';
 import 'package:virtus2027/features/pruebas/presentation/trucos_panel.dart';
 import 'package:virtus2027/features/pruebas/trucos_repository.dart';
 
@@ -36,6 +37,10 @@ class CataPage extends StatefulWidget {
     this.paisCodigo,
     this.rolLabel,
     this.tabletNumero,
+    this.tandaMuestrasTotal,
+    this.medallaGranOro,
+    this.medallaOro,
+    this.medallaPlata,
   });
 
   final MuestraEnTanda muestra;
@@ -51,6 +56,12 @@ class CataPage extends StatefulWidget {
   final String? paisCodigo;
   final String? rolLabel;
   final int? tabletNumero;
+  /// Total de muestras de la tanda (ya cargado en dashboard; sin consulta extra).
+  final int? tandaMuestrasTotal;
+  /// Umbrales de medalla desde `concursos` (Supabase).
+  final double? medallaGranOro;
+  final double? medallaOro;
+  final double? medallaPlata;
 
   @override
   State<CataPage> createState() => _CataPageState();
@@ -66,21 +77,28 @@ class _CataPageState extends State<CataPage> {
   bool _guardando = false;
   bool _soloLectura = false;
   bool _puntuacionEnviada = false;
+  /// Criterios a resaltar tras pulsar Enviar con ficha incompleta.
+  Set<String> _criteriosResaltados = {};
+  Timer? _resalteTimer;
   String? _error;
   CataPageRealtimeSync? _realtimeSalida;
 
   @override
   void initState() {
     super.initState();
-    _ficha = FichaDefinicion.vinosTranquilos();
-    _scores.addAll(_ficha.valoresPorDefecto());
+    _ficha = FichaDefinicion.deCategoria(
+      widget.categoria.ficha,
+      nombre: widget.categoria.nombre,
+      codigo: widget.categoria.codigo,
+    );
+    // Sin valores por defecto: total empieza en 0 y suma al marcar.
     _cargarPuntuacion();
     if (!widget.esPresidente) {
       _realtimeSalida = CataPageRealtimeSync(
         tandaId: widget.tanda.id,
         muestraId: widget.muestra.muestraId,
         catadorId: widget.catador.id,
-        onAprobada: _salirAlDashboardTrasAprobacion,
+        onForzarSalida: _forzarSalidaAlDashboard,
       );
       _realtimeSalida!.subscribe();
     }
@@ -88,21 +106,51 @@ class _CataPageState extends State<CataPage> {
 
   @override
   void dispose() {
+    _resalteTimer?.cancel();
     _realtimeSalida?.dispose();
     super.dispose();
   }
 
-  void _salirAlDashboardTrasAprobacion() {
+  /// Cierra diálogos (p. ej. «Revisar mi puntuación») y vuelve al dashboard.
+  /// Se dispara al aprobar o al cambiar el presidente de muestra.
+  void _forzarSalidaAlDashboard() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _cerrarOverlaysYSalir();
+    });
+  }
+
+  void _cerrarOverlaysYSalir() {
     if (!mounted || widget.esPresidente) return;
     final nav = Navigator.of(context);
-    final route = ModalRoute.of(context);
-    if (route != null && !route.isCurrent) {
-      nav.pop();
+    // Cierra diálogos encima (espera aprobación, etc.) y luego la ficha.
+    var guard = 0;
+    while (mounted && guard < 5) {
+      guard++;
+      final route = ModalRoute.of(context);
+      if (route != null && !route.isCurrent) {
+        nav.pop();
+        continue;
+      }
+      break;
     }
     if (!mounted) return;
     if (nav.canPop()) {
       nav.pop(widget.muestra.orden);
     }
+  }
+
+  /// Truco: hold 3 s en el título del concurso → pantalla de catadores.
+  Future<void> _salirAInicioTruco() async {
+    final catadorId = widget.catador.id;
+    try {
+      if (catadorId.isNotEmpty) {
+        await DispositivosRepository().releaseCatador(catadorId);
+      }
+    } catch (_) {
+      // Liberar es best-effort.
+    }
+    if (!mounted) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   Future<void> _abrirTrucos() async {
@@ -187,6 +235,9 @@ class _CataPageState extends State<CataPage> {
         _cargando = false;
       });
 
+      if (_puntuacionEnviada) {
+        _realtimeSalida?.setPollRespaldoActivo(true);
+      }
       if (_puntuacionEnviada && !widget.esPresidente) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _mostrarModalCatador();
@@ -216,14 +267,17 @@ class _CataPageState extends State<CataPage> {
     return faltan;
   }
 
-  int get _progresoPct {
-    final total = _ficha.todosLosCriterios.length;
-    if (total == 0) return 100;
-    return (((total - _faltanCriterios) / total) * 100).round();
-  }
-
   bool get _todosCompletos =>
       _ficha.todosLosCriterios.isNotEmpty && _faltanCriterios == 0;
+
+  /// Solo cuando falta exactamente un criterio (UI V2).
+  FichaCriterio? get _criterioUnicoPendiente {
+    if (_faltanCriterios != 1) return null;
+    for (final c in _ficha.todosLosCriterios) {
+      if (!_scores.containsKey(c.id)) return c;
+    }
+    return null;
+  }
 
   String get _rolDisplay {
     if (widget.rolLabel?.trim().isNotEmpty == true) {
@@ -238,21 +292,65 @@ class _CataPageState extends State<CataPage> {
 
   void _habilitarRevision() {
     setState(() => _puntuacionEnviada = false);
+    _realtimeSalida?.setPollRespaldoActivo(false);
   }
 
   void _onScoreChanged(String criterioId, num value) {
     if (!_formularioEditable) return;
-    setState(() => _scores[criterioId] = value);
+    setState(() {
+      _scores[criterioId] = value;
+      if (_criteriosResaltados.isNotEmpty) {
+        _criteriosResaltados = Set<String>.from(_criteriosResaltados)
+          ..remove(criterioId);
+      }
+    });
   }
 
   void _reiniciar() {
     if (!_formularioEditable) return;
     setState(() {
+      _scores.clear();
+      _puntuacionEnviada = false;
+      _criteriosResaltados = {};
+    });
+    _realtimeSalida?.setPollRespaldoActivo(false);
+  }
+
+  MedallaUmbrales get _umbralesMedalla => MedallaUmbrales(
+        granOro: widget.medallaGranOro ?? 92,
+        oro: widget.medallaOro ?? 85,
+        plata: widget.medallaPlata ?? 82,
+      );
+
+  /// TEMPORAL (modo pruebas): rellena criterios con total aleatorio 82–100.
+  void _rellenarPruebaAlto() {
+    if (!esModoPruebas || !_formularioEditable) return;
+    setState(() {
       _scores
         ..clear()
-        ..addAll(_ficha.valoresPorDefecto());
-      _puntuacionEnviada = false;
+        ..addAll(_ficha.scoresPruebaSobre87());
+      _criteriosResaltados = {};
     });
+  }
+
+  /// Si faltan criterios, no envía y los resalta ~2 s.
+  void _onEnviar() {
+    if (!_formularioEditable || _guardando) return;
+    if (!_todosCompletos) {
+      _resalteTimer?.cancel();
+      setState(() {
+        _criteriosResaltados = _ficha.todosLosCriterios
+            .where((c) => !_scores.containsKey(c.id))
+            .map((c) => c.id)
+            .toSet();
+      });
+      _resalteTimer = Timer(CataV2Theme.resaltePendientes, () {
+        if (!mounted) return;
+        setState(() => _criteriosResaltados = {});
+      });
+      return;
+    }
+    _guardar('enviada');
   }
 
   Future<void> _guardar(String estado) async {
@@ -274,6 +372,7 @@ class _CataPageState extends State<CataPage> {
 
       if (estado == 'enviada') {
         setState(() => _puntuacionEnviada = true);
+        _realtimeSalida?.setPollRespaldoActivo(true);
         if (widget.esPresidente) {
           await _mostrarModalPresidente();
         } else {
@@ -299,6 +398,9 @@ class _CataPageState extends State<CataPage> {
         ficha: _ficha,
         scores: _scores,
         total: _totalActual,
+        codigoMuestra: widget.muestra.codigoDisplay,
+        muestraOrden: widget.muestra.orden,
+        tandaMuestrasTotal: widget.tandaMuestrasTotal,
         onRevisar: () {
           Navigator.of(context).pop();
           _habilitarRevision();
@@ -345,22 +447,27 @@ class _CataPageState extends State<CataPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: CataColors.fondoPagina,
+      backgroundColor: CataV2Theme.fondo,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          CataHeaderBar(
-            catadorNombre: widget.catador.nombre,
+          CataHeaderV2(
+            concursoNombre: widget.concursoNombre ?? widget.categoria.nombre,
+            mostrarModoPruebas: esModoPruebas && widget.esPresidente,
+            onBack: widget.esPresidente
+                ? () => Navigator.of(context).pop()
+                : null,
+            onRefresh: _cargarPuntuacion,
+            onTrucos:
+                esModoPruebas && widget.esPresidente ? _abrirTrucos : null,
+            onSalirInicio: _salirAInicioTruco,
             rolLabel: _rolDisplay,
             mesaNumero: widget.mesaNumero ?? 0,
             tandaNumero: widget.tandaNumero,
             puesto: widget.catador.codigoCatador,
             tabletNumero: widget.tabletNumero,
-            progresoPct: _progresoPct,
-            mostrarModoPruebas: esModoPruebas && widget.esPresidente,
-            onBack: () => Navigator.of(context).pop(),
-            onRefresh: _cargarPuntuacion,
-            onTrucos: esModoPruebas && widget.esPresidente ? _abrirTrucos : null,
+            catadorNombre: widget.catador.nombre,
+            paisCodigo: widget.paisCodigo ?? widget.catador.pais,
           ),
           Expanded(child: _buildBody()),
         ],
@@ -409,78 +516,59 @@ class _CataPageState extends State<CataPage> {
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 168,
-            height: CataFormLayout.alturaObjetivo,
-            child: CataInfoPanel(
-              concursoNombre:
-                  widget.concursoNombre ?? widget.categoria.nombre,
-              catadorNombre: widget.catador.nombre,
-              paisCodigo: widget.paisCodigo ?? widget.catador.pais,
-              puesto: widget.catador.codigoCatador,
-              categoriaNombre: widget.categoria.nombre,
-              codigoMuestra: widget.muestra.codigoDisplay,
-              readOnly: !_formularioEditable,
-              onReiniciar: _reiniciar,
-              onDescartar: () => Navigator.of(context).pop(),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: SizedBox(
-              height: CataFormLayout.alturaObjetivo,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
+    final unico = _criterioUnicoPendiente;
+    final form = CataFormV2(
+      ficha: _ficha,
+      scores: _scores,
+      readOnly: !_formularioEditable,
+      onScoreChanged: _onScoreChanged,
+      totalActual: _totalActual,
+      umbrales: _umbralesMedalla,
+      faltanCriterios: _faltanCriterios,
+      criteriosCompletos:
+          _ficha.todosLosCriterios.length - _faltanCriterios,
+      codigoMuestra: widget.muestra.codigoDisplay,
+      categoriaNombre: widget.categoria.nombre,
+      guardando: _guardando,
+      fichaCompleta: _todosCompletos,
+      criteriosResaltados: _criteriosResaltados,
+      idCriterioUnicoPendiente: unico?.id,
+      nombreCriterioUnicoPendiente: unico?.label,
+      onEnviar: _onEnviar,
+      onReiniciar: _formularioEditable ? _reiniciar : null,
+      onDescartar:
+          widget.esPresidente ? () => Navigator.of(context).pop() : null,
+    );
+
+    // TEMPORAL: botón relleno >87 (solo esModoPruebas). Quitar en producción.
+    if (!esModoPruebas || !_formularioEditable) return form;
+
+    return Stack(
+      children: [
+        form,
+        Positioned(
+          left: 16,
+          bottom: 16,
+          child: Material(
+            color: const Color(0xFFE65100),
+            elevation: 6,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: _rellenarPruebaAlto,
+              child: const SizedBox(
+                width: 64,
+                height: 64,
+                child: Icon(
+                  Icons.bolt,
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade300),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(7),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Column(
-                      children: [
-                        for (final grupo in _ficha.grupos)
-                          Expanded(
-                            flex: grupo.criterios.length,
-                            child: GrupoCriterios(
-                              grupo: grupo,
-                              scores: _scores,
-                              readOnly: !_formularioEditable,
-                              fillHeight: true,
-                              onScoreChanged: _onScoreChanged,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+                  size: 40,
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 158,
-            height: CataFormLayout.alturaObjetivo,
-            child: CataResumenPanel(
-              totalActual: _totalActual,
-              totalMin: _ficha.totalMin,
-              totalMax: _ficha.totalMax,
-              faltanCriterios: _faltanCriterios,
-              readOnly: _soloLectura,
-              guardando: _guardando,
-              puedeEnviar: _todosCompletos && _formularioEditable,
-              onEnviar: () => _guardar('enviada'),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
