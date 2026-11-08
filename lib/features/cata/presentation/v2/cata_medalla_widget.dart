@@ -9,10 +9,13 @@ class CataMedallaWidget extends StatelessWidget {
     super.key,
     required this.variante,
     this.size = CataV2Theme.tamanoMedalla,
+    this.mostrarTexto = true,
   });
 
   final CataMedallaVisual variante;
   final double size;
+  /// Si false, solo dibuja la medalla (p. ej. V4 controla el texto debajo).
+  final bool mostrarTexto;
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +37,9 @@ class CataMedallaWidget extends StatelessWidget {
             painter: _MedallaPainter(variante: variante),
           ),
         ),
-        if (CataV2Theme.mostrarTextoMedalla && label.isNotEmpty) ...[
+        if (mostrarTexto &&
+            CataV2Theme.mostrarTextoMedalla &&
+            label.isNotEmpty) ...[
           Transform.translate(
             offset: const Offset(0, -4),
             child: conPremio

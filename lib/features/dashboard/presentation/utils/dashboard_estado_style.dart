@@ -42,7 +42,12 @@ abstract final class DashboardEstadoStyle {
       'completada' || 'finalizada' => (
           dot: VirtusColors.claro,
           text: VirtusColors.oscuro,
-          label: 'Completada',
+          label: 'Cerrada',
+        ),
+      'incidencia' => (
+          dot: const Color(0xFFE65100),
+          text: const Color(0xFFBF360C),
+          label: 'Incidencia',
         ),
       _ => (
           dot: VirtusColors.muyClaro,

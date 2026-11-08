@@ -76,14 +76,19 @@ class MuestraHeroCard extends StatelessWidget {
   static const Color amberDeep = Color(0xFFB87A00);
   static const Color green = Color(0xFF2D6A4F);
   static const Color greenDeep = Color(0xFF1B4332);
+  static const Color incidencia = Color(0xFFE65100);
+  static const Color incidenciaDeep = Color(0xFFBF360C);
 
   @override
   Widget build(BuildContext context) {
     final estado = (muestra?.estado ?? '').toLowerCase().trim();
-    final esperando =
-        tandaAbierta && (estado == 'pendiente' || estado.isEmpty);
-    final abierta =
-        tandaAbierta && (estado == 'activa' || estado == 'en_curso');
+    final enIncidencia = estado == 'incidencia';
+    final esperando = !enIncidencia &&
+        tandaAbierta &&
+        (estado == 'pendiente' || estado.isEmpty);
+    final abierta = !enIncidencia &&
+        tandaAbierta &&
+        (estado == 'activa' || estado == 'en_curso');
 
     final card = SizedBox(
       height: height,
@@ -98,8 +103,9 @@ class MuestraHeroCard extends StatelessWidget {
               esPresidente: esPresidente,
               esperando: esperando,
               abierta: abierta,
-              onAbrirCata: onAbrirCata,
-              onEntrarCatar: onEntrarCatar,
+              enIncidencia: enIncidencia,
+              onAbrirCata: enIncidencia ? null : onAbrirCata,
+              onEntrarCatar: enIncidencia ? null : onEntrarCatar,
             ),
     );
 
@@ -137,6 +143,7 @@ class _HeroActivo extends StatefulWidget {
     required this.esPresidente,
     required this.esperando,
     required this.abierta,
+    required this.enIncidencia,
     this.onAbrirCata,
     this.onEntrarCatar,
   });
@@ -148,6 +155,7 @@ class _HeroActivo extends StatefulWidget {
   final bool esPresidente;
   final bool esperando;
   final bool abierta;
+  final bool enIncidencia;
   final VoidCallback? onAbrirCata;
   final VoidCallback? onEntrarCatar;
 
@@ -193,35 +201,44 @@ class _HeroActivoState extends State<_HeroActivo>
   Widget build(BuildContext context) {
     final categoria =
         widget.muestra.categoriaDisplay(fallback: widget.categoriaNombre);
-    final botonEnabled = widget.esperando
-        ? widget.onAbrirCata != null
-        : widget.onEntrarCatar != null;
-    final botonOnPressed =
-        widget.esperando ? widget.onAbrirCata : widget.onEntrarCatar;
+    final botonEnabled = !widget.enIncidencia &&
+        (widget.esperando
+            ? widget.onAbrirCata != null
+            : widget.onEntrarCatar != null);
+    final botonOnPressed = widget.enIncidencia
+        ? null
+        : (widget.esperando ? widget.onAbrirCata : widget.onEntrarCatar);
     final progreso = widget.stats.total == 0
         ? 0.0
         : (widget.stats.catadas / widget.stats.total).clamp(0.0, 1.0);
 
-    final base = !widget.tandaAbierta
-        ? const Color(0xFF5A635A)
+    final base = widget.enIncidencia
+        ? MuestraHeroCard.incidenciaDeep
+        : !widget.tandaAbierta
+            ? const Color(0xFF5A635A)
+            : widget.esperando
+                ? MuestraHeroCard.amberDeep
+                : widget.abierta
+                    ? MuestraHeroCard.greenDeep
+                    : CataV2Theme.cabecera;
+    final highlight = widget.enIncidencia
+        ? MuestraHeroCard.incidencia
         : widget.esperando
-            ? MuestraHeroCard.amberDeep
+            ? MuestraHeroCard.amber
             : widget.abierta
-                ? MuestraHeroCard.greenDeep
-                : CataV2Theme.cabecera;
-    final highlight = widget.esperando
-        ? MuestraHeroCard.amber
-        : widget.abierta
-            ? MuestraHeroCard.green
-            : base;
+                ? MuestraHeroCard.green
+                : base;
 
-    final estadoLabel = !widget.tandaAbierta
-        ? 'Cata cerrada'
-        : widget.esperando
-            ? 'Muestra en preparación'
-            : widget.abierta
-                ? 'Cata abierta'
-                : 'En espera';
+    final motivo = (widget.muestra.incidenciaMotivo ?? '').trim();
+    final estadoLabel = widget.enIncidencia
+        ? (motivo.isEmpty ? 'INCIDENCIA' : 'INCIDENCIA · $motivo')
+        : !widget.tandaAbierta
+            ? 'Cata cerrada'
+            : widget.esperando
+                ? 'Muestra en preparación'
+                : widget.abierta
+                    ? 'Cata abierta'
+                    : 'En espera';
 
     return AnimatedBuilder(
       animation: _blink,
@@ -330,7 +347,11 @@ class _HeroActivoState extends State<_HeroActivo>
                 if (widget.esPresidente) ...[
                   const SizedBox(height: 8),
                   _CtaFlechas(
-                    label: widget.esperando ? 'ABRIR CATA' : 'ENTRAR A CATAR',
+                    label: widget.enIncidencia
+                        ? 'ESPERA AL ADMINISTRADOR'
+                        : widget.esperando
+                            ? 'ABRIR CATA'
+                            : 'ENTRAR A CATAR',
                     enabled: botonEnabled,
                     onPressed: botonOnPressed,
                     animate: botonEnabled,

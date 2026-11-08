@@ -4,6 +4,8 @@ import 'package:virtus2027/app/app.dart';
 import 'package:virtus2027/config/supabase_config.dart';
 import 'package:virtus2027/core/layout/tablet_layout.dart';
 import 'package:virtus2027/core/layout/tablet_viewport.dart';
+import 'package:virtus2027/core/services/conexion_local_probe.dart';
+import 'package:virtus2027/core/services/realtime_reconnect_bus.dart';
 import 'package:virtus2027/core/services/servidor_estado.dart';
 import 'package:virtus2027/core/theme/tablet_theme.dart';
 import 'package:virtus2027/core/theme/virtus_system_ui.dart';
@@ -20,12 +22,15 @@ Future<void> main() async {
 
   try {
     await SupabaseConfig.initialize();
+    await ConexionLocalProbe.assertReachableIfLocal();
   } catch (e) {
-    runApp(_BootstrapErrorApp(message: e.toString()));
+    final message = e is StateError ? (e.message) : e.toString();
+    runApp(_BootstrapErrorApp(message: message));
     return;
   }
 
   ServidorEstado.instance.start();
+  RealtimeReconnectBus.ensureHooks();
   runApp(const VirtusApp());
 }
 
@@ -62,22 +67,25 @@ class _BootstrapErrorApp extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Error al iniciar',
+                      'No se pudo arrancar',
                       style: theme.textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      message,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium,
-                      maxLines: 5,
-                      overflow: TextOverflow.ellipsis,
-                    ),
                     const SizedBox(height: 12),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: SingleChildScrollView(
+                        child: Text(
+                          message,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     Text(
-                      'Configura .env con las credenciales de Supabase.',
+                      'Corrige el problema y reinicia la app (hot restart / R).',
                       textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium,
+                      style: theme.textTheme.bodySmall,
                     ),
                   ],
                 ),

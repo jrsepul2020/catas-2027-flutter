@@ -14,6 +14,8 @@ class CatadorEsperaPanel extends StatelessWidget {
     required this.muestrasCatadas,
     this.proximaOrden,
     this.categoriaFallback,
+    this.enIncidencia = false,
+    this.incidenciaMotivo,
   });
 
   final int catadas;
@@ -21,10 +23,13 @@ class CatadorEsperaPanel extends StatelessWidget {
   final List<MuestraEnTanda> muestrasCatadas;
   final int? proximaOrden;
   final String? categoriaFallback;
+  final bool enIncidencia;
+  final String? incidenciaMotivo;
 
   @override
   Widget build(BuildContext context) {
     final progreso = total <= 0 ? 0.0 : (catadas / total).clamp(0.0, 1.0);
+    final motivo = (incidenciaMotivo ?? '').trim();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
@@ -36,7 +41,11 @@ class CatadorEsperaPanel extends StatelessWidget {
               decoration: BoxDecoration(
                 color: CataV2Theme.superficie,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: CataV2Theme.borde),
+                border: Border.all(
+                  color: enIncidencia
+                      ? const Color(0xFFE65100)
+                      : CataV2Theme.borde,
+                ),
               ),
               child: Center(
                 child: Padding(
@@ -44,21 +53,44 @@ class CatadorEsperaPanel extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const _IconoEsperaAnimado(),
+                      _IconoEsperaAnimado(incidencia: enIncidencia),
                       const SizedBox(height: 18),
-                      const _TituloEsperaAnimado(),
+                      _TituloEsperaAnimado(incidencia: enIncidencia),
                       const SizedBox(height: 14),
                       Text(
-                        'MUESTRAS PENDIENTES DE CATAR',
+                        enIncidencia
+                            ? 'PAUSA · INCIDENCIA'
+                            : 'MUESTRAS PENDIENTES DE CATAR',
                         textAlign: TextAlign.center,
                         style: CataV2Theme.text(
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
-                          color: CataV2Theme.cabecera,
+                          color: enIncidencia
+                              ? const Color(0xFFE65100)
+                              : CataV2Theme.cabecera,
                           letterSpacing: 0.3,
                         ),
                       ),
-                      if (proximaOrden != null) ...[
+                      if (enIncidencia) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          motivo.isEmpty
+                              ? 'Espera al administrador'
+                              : motivo,
+                          textAlign: TextAlign.center,
+                          style: DashboardType.body(
+                            color: CataV2Theme.textoSecundario,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Espera al administrador',
+                          textAlign: TextAlign.center,
+                          style: DashboardType.label(
+                            color: const Color(0xFFE65100),
+                          ),
+                        ),
+                      ] else if (proximaOrden != null) ...[
                         const SizedBox(height: 8),
                         Text(
                           'Muestra $proximaOrden de $total'
@@ -78,7 +110,9 @@ class CatadorEsperaPanel extends StatelessWidget {
                             value: progreso,
                             minHeight: 6,
                             backgroundColor: CataV2Theme.borde,
-                            color: CataV2Theme.cabecera,
+                            color: enIncidencia
+                                ? const Color(0xFFE65100)
+                                : CataV2Theme.cabecera,
                           ),
                         ),
                       ),
@@ -140,7 +174,9 @@ class CatadorEsperaPanel extends StatelessWidget {
 
 /// Reloj de arena grande: pulso + volteo suave.
 class _IconoEsperaAnimado extends StatefulWidget {
-  const _IconoEsperaAnimado();
+  const _IconoEsperaAnimado({this.incidencia = false});
+
+  final bool incidencia;
 
   @override
   State<_IconoEsperaAnimado> createState() => _IconoEsperaAnimadoState();
@@ -180,9 +216,11 @@ class _IconoEsperaAnimadoState extends State<_IconoEsperaAnimado>
           child: Transform.scale(
             scale: scale,
             child: Icon(
-              arriba
-                  ? Icons.hourglass_top_rounded
-                  : Icons.hourglass_bottom_rounded,
+              widget.incidencia
+                  ? Icons.report_gmailerrorred_rounded
+                  : (arriba
+                      ? Icons.hourglass_top_rounded
+                      : Icons.hourglass_bottom_rounded),
               size: 80,
               color: const Color(0xFFC62828),
             ),
@@ -195,7 +233,9 @@ class _IconoEsperaAnimadoState extends State<_IconoEsperaAnimado>
 
 /// Título grande con respiración de opacidad (señal de espera).
 class _TituloEsperaAnimado extends StatefulWidget {
-  const _TituloEsperaAnimado();
+  const _TituloEsperaAnimado({this.incidencia = false});
+
+  final bool incidencia;
 
   @override
   State<_TituloEsperaAnimado> createState() => _TituloEsperaAnimadoState();
@@ -227,12 +267,16 @@ class _TituloEsperaAnimadoState extends State<_TituloEsperaAnimado>
         CurvedAnimation(parent: _c, curve: Curves.easeInOut),
       ),
       child: Text(
-        'ESPERANDO AL PRESIDENTE',
+        widget.incidencia
+            ? 'PAUSA · INCIDENCIA · ESPERA AL ADMINISTRADOR'
+            : 'ESPERANDO AL PRESIDENTE',
         textAlign: TextAlign.center,
         style: CataV2Theme.text(
-          fontSize: 26,
+          fontSize: widget.incidencia ? 22 : 26,
           fontWeight: FontWeight.w800,
-          color: CataV2Theme.texto,
+          color: widget.incidencia
+              ? const Color(0xFFC62828)
+              : CataV2Theme.texto,
           letterSpacing: 0.6,
           height: 1.15,
         ),

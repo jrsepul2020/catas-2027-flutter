@@ -23,6 +23,8 @@ import 'package:virtus2027/features/dashboard/presentation/widgets/muestras_list
 import 'package:virtus2027/features/dashboard/presentation/widgets/muestras_pendientes_list.dart';
 import 'package:virtus2027/features/dashboard/presentation/widgets/tanda_completada_panel.dart';
 import 'package:virtus2027/config/app_mode.dart';
+import 'package:virtus2027/core/services/app_wakelock.dart';
+import 'package:virtus2027/core/services/realtime_reconnect_bus.dart';
 import 'package:virtus2027/features/cata/presentation/v2/cata_v2_theme.dart';
 import 'package:virtus2027/features/home/data/dispositivos_repository.dart';
 import 'package:virtus2027/features/home/domain/dispositivo_home_item.dart';
@@ -60,12 +62,16 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
+    unawaited(AppWakelock.enableForSession());
+    RealtimeReconnectBus.addListener(_onRealtimeReconnect);
     _load();
     _iniciarRealtimeTrasPrimeraCarga();
   }
 
   @override
   void dispose() {
+    RealtimeReconnectBus.removeListener(_onRealtimeReconnect);
+    unawaited(AppWakelock.disable());
     final sync = _realtime;
     _realtime = null;
     sync?.dispose();
@@ -73,6 +79,11 @@ class _DashboardPageState extends State<DashboardPage> {
     _autoCata = null;
     auto?.dispose();
     super.dispose();
+  }
+
+  void _onRealtimeReconnect() {
+    if (!mounted || _abriendoCata) return;
+    unawaited(_manejarRealtimeDashboard());
   }
 
   Future<void> _iniciarRealtimeTrasPrimeraCarga() async {
@@ -478,6 +489,11 @@ class _DashboardPageState extends State<DashboardPage> {
     TabletDashboard dashboard,
     bool esPresidente,
   ) {
+    if (DashboardMuestraUtils.estaIncidencia(muestra) ||
+        DashboardMuestraUtils.muestraEnIncidencia(dashboard.muestras) !=
+            null) {
+      return;
+    }
     if (esPresidente &&
         DashboardMuestraUtils.estaPendienteApertura(muestra)) {
       _abrirCataMesa(muestra: muestra, dashboard: dashboard);
@@ -492,6 +508,82 @@ class _DashboardPageState extends State<DashboardPage> {
         categoria: dashboard.categoria,
         colorPrimario: dashboard.concursoColorPrimario,
         dashboard: dashboard,
+      );
+    }
+  }
+
+  void _tapMuestraLista(
+    MuestraEnTanda muestra,
+    TabletDashboard dashboard,
+    bool esPresidente,
+  ) {
+    if (DashboardMuestraUtils.estaCatada(muestra)) {
+      if (esPresidente) {
+        unawaited(_mostrarDialogoMuestraCerrada(muestra, dashboard));
+      }
+      return;
+    }
+    if (DashboardMuestraUtils.estaIncidencia(muestra) ||
+        DashboardMuestraUtils.muestraEnIncidencia(dashboard.muestras) !=
+            null) {
+      return;
+    }
+    _abrirCata(
+      context,
+      muestra: muestra,
+      tanda: dashboard.tanda!,
+      catador: dashboard.catador!,
+      categoria: dashboard.categoria,
+      colorPrimario: dashboard.concursoColorPrimario,
+      dashboard: dashboard,
+    );
+  }
+
+  Future<void> _mostrarDialogoMuestraCerrada(
+    MuestraEnTanda muestra,
+    TabletDashboard dashboard,
+  ) async {
+    final tanda = dashboard.tanda;
+    if (tanda == null) return;
+
+    final pedir = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Muestra ${muestra.codigoDisplay}'),
+        content: const Text(
+          'Muestra cerrada. Para recatar, pide permiso al administrador',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cerrar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Pedir recata al admin'),
+          ),
+        ],
+      ),
+    );
+
+    if (pedir != true || !mounted) return;
+
+    try {
+      await CataRepository().marcarIncidencia(
+        tandaId: tanda.id,
+        muestraId: muestra.muestraId,
+        motivo: 'RECATA solicitada',
+      );
+      if (!mounted) return;
+      _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e is PostgrestException ? e.message : e.toString(),
+          ),
+        ),
       );
     }
   }
@@ -539,6 +631,7 @@ class _DashboardPageState extends State<DashboardPage> {
             esPresidente: esPresidente,
             mesaId: dashboard.mesa?.id ?? catador.mesaId,
             colorPrimario: colorPrimario,
+            concursoId: dashboard.concurso?.id,
             concursoNombre: dashboard.concurso?.nombre,
             mesaNumero: dashboard.mesaNumero,
             tandaNumero: dashboard.tandaNumero,
@@ -617,12 +710,15 @@ class _DashboardPageState extends State<DashboardPage> {
             );
           }
           final stats = DashboardMuestraStats.fromMuestras(dashboard.muestras);
+          final muestraIncidencia =
+              DashboardMuestraUtils.muestraEnIncidencia(dashboard.muestras);
           final muestraActiva =
-              DashboardMuestraUtils.muestraActiva(dashboard.muestras);
+              DashboardMuestraUtils.muestraEnFoco(dashboard.muestras);
           final categoriaNombre =
               dashboard.categoria?.nombre ?? 'Sin categoría';
           final tandaAbierta =
               dashboard.tanda?.estado.toLowerCase() == 'abierta';
+          final mesaEnIncidencia = muestraIncidencia != null;
 
           if (!_filtroInicializado) {
             _filtro = DashboardMuestraUtils.filtroInicial(dashboard.muestras);
@@ -642,6 +738,7 @@ class _DashboardPageState extends State<DashboardPage> {
           final esPresidente = _esPresidente(dashboard);
 
           final puedeAbrirCata = esPresidente &&
+              !mesaEnIncidencia &&
               muestraActiva != null &&
               tandaAbierta &&
               dashboard.tanda != null &&
@@ -649,6 +746,7 @@ class _DashboardPageState extends State<DashboardPage> {
               DashboardMuestraUtils.estaPendienteApertura(muestraActiva);
           // Presidente: entrar a ficha si la muestra ya está activa.
           final puedeContinuarCata = esPresidente &&
+              !mesaEnIncidencia &&
               muestraActiva != null &&
               tandaAbierta &&
               dashboard.tanda != null &&
@@ -696,12 +794,17 @@ class _DashboardPageState extends State<DashboardPage> {
                     ? CatadorEsperaPanel(
                         catadas: stats.catadas,
                         total: stats.total,
-                        proximaOrden: muestraActiva?.orden,
+                        proximaOrden: mesaEnIncidencia
+                            ? null
+                            : muestraActiva?.orden,
                         muestrasCatadas: DashboardMuestraUtils.filtrar(
                           dashboard.muestras,
                           MuestraFiltro.catadas,
                         ),
                         categoriaFallback: categoriaNombre,
+                        enIncidencia: mesaEnIncidencia,
+                        incidenciaMotivo:
+                            muestraIncidencia?.incidenciaMotivo,
                       )
                     : Padding(
                   padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
@@ -816,16 +919,10 @@ class _DashboardPageState extends State<DashboardPage> {
                                           categoriaFallback:
                                               categoriaNombre,
                                           onMuestraTap: (muestra) =>
-                                              _abrirCata(
-                                            context,
-                                            muestra: muestra,
-                                            tanda: dashboard.tanda!,
-                                            catador: dashboard.catador!,
-                                            categoria:
-                                                dashboard.categoria,
-                                            colorPrimario: dashboard
-                                                .concursoColorPrimario,
-                                            dashboard: dashboard,
+                                              _tapMuestraLista(
+                                            muestra,
+                                            dashboard,
+                                            esPresidente,
                                           ),
                                         )
                                       : Center(

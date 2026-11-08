@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:virtus2027/core/services/realtime_reconnect_bus.dart';
 import 'package:virtus2027/features/cata/data/cata_aprobacion_realtime_sync.dart';
 import 'package:virtus2027/features/cata/data/cata_repository.dart';
 import 'package:virtus2027/features/cata/domain/puntuacion_mesa_catador.dart';
@@ -15,6 +16,7 @@ class CataAprobacionModal extends StatefulWidget {
     required this.onRevisar,
     required this.onAprobar,
     this.repository,
+    this.concursoId = '',
   });
 
   final String mesaId;
@@ -25,6 +27,7 @@ class CataAprobacionModal extends StatefulWidget {
   final VoidCallback onRevisar;
   final Future<void> Function() onAprobar;
   final CataRepository? repository;
+  final String concursoId;
 
   @override
   State<CataAprobacionModal> createState() => _CataAprobacionModalState();
@@ -44,6 +47,7 @@ class _CataAprobacionModalState extends State<CataAprobacionModal> {
   void initState() {
     super.initState();
     _repository = widget.repository ?? CataRepository();
+    RealtimeReconnectBus.addListener(_onRealtimeReconnect);
     _cargarResumen(inicial: true);
     _realtime = CataAprobacionRealtimeSync(
       tandaId: widget.tandaId,
@@ -55,8 +59,14 @@ class _CataAprobacionModalState extends State<CataAprobacionModal> {
 
   @override
   void dispose() {
+    RealtimeReconnectBus.removeListener(_onRealtimeReconnect);
     _realtime?.dispose();
     super.dispose();
+  }
+
+  void _onRealtimeReconnect() {
+    if (!mounted || _aprobando) return;
+    _cargarResumen(inicial: false);
   }
 
   Future<void> _cargarResumen({required bool inicial}) async {
@@ -141,6 +151,7 @@ class _CataAprobacionModalState extends State<CataAprobacionModal> {
           onRevisar: widget.onRevisar,
           onAprobar: _aprobar,
           onAprobarAdmin: _aprobar,
+          concursoId: widget.concursoId,
         ),
         if (_actualizando)
           Positioned(

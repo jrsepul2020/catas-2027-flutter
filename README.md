@@ -26,7 +26,7 @@ La aplicación es **funcional para concurso en mesa**: presidente y catadores pu
 ### Roles
 
 - **Presidente:** abre cata, puntúa, revisa, aprueba la mesa y continúa.
-- **Catador:** entra a cata activa, puntúa, espera aprobación; si el presidente aprueba, sale al dashboard sin intervención manual.
+- **Catador:** entra a cata activa, puntúa, espera aprobación; si el presidente aprueba **o cambia de muestra**, sale al dashboard (también con el modal «Revisar mi puntuación» abierto).
 
 ### Pendiente / mejoras futuras
 
@@ -87,10 +87,26 @@ En el SQL Editor, añadir a la publicación `supabase_realtime`:
 
 ```bash
 flutter pub get
-flutter run
+flutter run -d chrome
 ```
 
-Hot restart en desarrollo: **`R`** en la terminal de `flutter run`.
+### Hot reload / restart en Chrome (Mac)
+
+**`Cmd+R` en Chrome no aplica cambios de Dart.** Solo recarga la página del navegador con el código ya compilado.
+
+Con `flutter run -d chrome` activo:
+
+1. Haz clic en la **terminal** (no en Chrome).
+2. Pulsa **`r`** = hot reload (conserva estado).
+3. Pulsa **`R`** (mayúscula) = hot restart (recomendado tras cambios de UI, diálogos, `initState`, temas).
+
+Si el reload falla con errores `WipError` / se desconecta el debug service:
+
+```bash
+flutter run -d chrome --no-web-experimental-hot-reload
+```
+
+Luego usa **`R`** en la terminal. Evita `Ctrl+C` + volver a lanzar salvo que cambies `pubspec`, assets o el proceso deje de responder.
 
 ---
 
@@ -137,7 +153,10 @@ Home (elegir tablet)
 
 ## Build APK release
 
+Antes del APK, sella versión + hora España (Europe/Madrid) en la UI:
+
 ```bash
+dart run tool/stamp_build.dart
 flutter build apk --release
 ```
 

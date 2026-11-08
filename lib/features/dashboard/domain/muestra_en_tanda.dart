@@ -23,8 +23,11 @@ class MuestraEnTanda {
   final String? tandaMuestraId;
   final String? estado;
   final String? nombre;
+  /// Legacy: string; preferir [codigoCiego] (int).
   final String? codigo;
-  final String? codigoCiego;
+  /// Código ciego 1–9999 (API lo entrega como número).
+  final int? codigoCiego;
+  /// Etiqueta de pantalla (DEMO-001…). No usar para lógica ni búsqueda.
   final String? codigoTexto;
   /// `muestras.categoria_id`.
   final String? categoriaId;
@@ -38,6 +41,9 @@ class MuestraEnTanda {
 
   bool get esDemo =>
       (codigoTexto ?? '').trim().toUpperCase().startsWith('DEMO-');
+
+  /// Manual admin (1–999): cata pero no premia. Rango = única regla.
+  bool get noPremia => codigoCiego != null && codigoCiego! < 1000;
 
   MuestraEnTanda copyWith({
     double? puntuacionCatador,
@@ -70,21 +76,22 @@ class MuestraEnTanda {
     String? tandaMuestraId,
     String? nombre,
     int? codigo,
-    String? codigoCiego,
+    int? codigoCiego,
     String? codigoTexto,
     String? categoriaId,
     String? categoriaNombre,
     String? categoriaCata,
     String? incidenciaMotivo,
   }) {
+    final ciego = codigoCiego ?? codigo;
     return MuestraEnTanda(
       muestraId: muestraId,
       orden: orden,
       tandaMuestraId: _nonEmpty(tandaMuestraId),
       estado: _nonEmpty(estado),
       nombre: _nonEmpty(nombre) ?? 'Muestra $muestraId',
-      codigo: codigo?.toString(),
-      codigoCiego: _nonEmpty(codigoCiego),
+      codigo: ciego?.toString().padLeft(4, '0'),
+      codigoCiego: ciego,
       codigoTexto: _nonEmpty(codigoTexto),
       categoriaId: _nonEmpty(categoriaId),
       categoriaNombre: _nonEmpty(categoriaNombre),
@@ -137,20 +144,37 @@ class MuestraEnTanda {
     return trimmed;
   }
 
+  /// Pantalla: DEMO usa etiqueta; resto, entero con 4 cifras (788 → "0788").
   String get codigoDisplay {
-    if (codigoCiego != null && codigoCiego!.isNotEmpty) return codigoCiego!;
-    if (codigoTexto != null && codigoTexto!.isNotEmpty) return codigoTexto!;
-    if (codigo != null && codigo!.isNotEmpty) return codigo!;
+    final texto = codigoTexto?.trim();
+    if (texto != null && texto.toUpperCase().startsWith('DEMO-')) {
+      return texto;
+    }
+    if (codigoCiego != null) {
+      return codigoCiego!.toString().padLeft(4, '0');
+    }
+    if (texto != null && texto.isNotEmpty) return texto;
+    if (codigo != null && codigo!.isNotEmpty) {
+      final n = int.tryParse(codigo!);
+      if (n != null) return n.toString().padLeft(4, '0');
+      return codigo!;
+    }
     return '—';
+  }
+
+  /// Contenido de QR / código de barras: siempre 4 cifras con ceros.
+  String? get codigoCiegoQr {
+    if (codigoCiego == null) return null;
+    return codigoCiego!.toString().padLeft(4, '0');
   }
 
   String get estadoLabel {
     return switch ((estado ?? '').toLowerCase()) {
       'activa' => 'Activa',
       'pendiente' => 'Pendiente',
-      'completada' => 'Completada',
+      'completada' => 'Cerrada',
       'en_curso' => 'Activa',
-      'finalizada' => 'Completada',
+      'finalizada' => 'Cerrada',
       'incidencia' => 'Incidencia',
       '' => 'Pendiente',
       _ => estado ?? 'Pendiente',

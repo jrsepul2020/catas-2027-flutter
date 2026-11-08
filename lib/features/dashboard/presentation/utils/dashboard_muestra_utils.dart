@@ -58,6 +58,19 @@ class DashboardMuestraStats {
 }
 
 abstract final class DashboardMuestraUtils {
+  static MuestraEnTanda? muestraEnIncidencia(List<MuestraEnTanda> muestras) {
+    final ordenadas = [...muestras]..sort((a, b) => a.orden.compareTo(b.orden));
+    for (final muestra in ordenadas) {
+      if (_normalizeEstado(muestra.estado) == 'incidencia') return muestra;
+    }
+    return null;
+  }
+
+  /// Prioriza incidencia (pausa de mesa); si no, la muestra en foco normal.
+  static MuestraEnTanda? muestraEnFoco(List<MuestraEnTanda> muestras) {
+    return muestraEnIncidencia(muestras) ?? muestraActiva(muestras);
+  }
+
   static MuestraEnTanda? muestraActiva(List<MuestraEnTanda> muestras) {
     final ordenadas = [...muestras]..sort((a, b) => a.orden.compareTo(b.orden));
 
@@ -106,10 +119,11 @@ abstract final class DashboardMuestraUtils {
 
   static String pillLabel(MuestraEnTanda muestra) {
     return switch (_normalizeEstado(muestra.estado)) {
-      'completada' || 'finalizada' => 'CATADA',
+      'completada' || 'finalizada' => 'CERRADA',
       'activa' => 'ACTIVA',
       'descalificada' => 'DESCALIF.',
       'pospuesta' => 'POSPUESTA',
+      'incidencia' => 'INCIDENCIA',
       _ => 'PENDIENTE',
     };
   }
@@ -124,13 +138,16 @@ abstract final class DashboardMuestraUtils {
     return e == 'activa' || e == 'en_curso';
   }
 
+  static bool estaIncidencia(MuestraEnTanda muestra) {
+    return _normalizeEstado(muestra.estado) == 'incidencia';
+  }
+
   static bool estaPendienteApertura(MuestraEnTanda muestra) {
     final e = _normalizeEstado(muestra.estado);
     return e == 'pendiente' || e.isEmpty;
   }
 
-  /// Tanda lista para cerrar: no quedan pendientes, pospuestas ni en curso.
-  /// (Criterio acordado: sin `pendiente`/`pospuesta`; también sin `activa`.)
+  /// Tanda lista para cerrar: no quedan pendientes, pospuestas, incidencias ni en curso.
   static bool tandaCompletada(List<MuestraEnTanda> muestras) {
     if (muestras.isEmpty) return false;
     for (final m in muestras) {
@@ -139,7 +156,8 @@ abstract final class DashboardMuestraUtils {
           e.isEmpty ||
           e == 'pospuesta' ||
           e == 'activa' ||
-          e == 'en_curso') {
+          e == 'en_curso' ||
+          e == 'incidencia') {
         return false;
       }
     }
@@ -154,7 +172,8 @@ abstract final class DashboardMuestraUtils {
             (e == 'pendiente' ||
                 e == 'activa' ||
                 e.isEmpty ||
-                e == 'en_curso'),
+                e == 'en_curso' ||
+                e == 'incidencia'),
       MuestraFiltro.catadas => estaCatada(muestra),
       MuestraFiltro.descalificadas =>
         e == 'descalificada' || e == 'pospuesta',

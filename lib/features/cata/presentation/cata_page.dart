@@ -10,12 +10,19 @@ import 'package:virtus2027/features/cata/data/cata_page_realtime_sync.dart';
 import 'package:virtus2027/features/cata/data/cata_repository.dart';
 import 'package:virtus2027/features/cata/domain/ficha_definicion.dart';
 import 'package:virtus2027/config/app_mode.dart';
+import 'package:virtus2027/core/services/app_wakelock.dart';
+import 'package:virtus2027/core/services/realtime_reconnect_bus.dart';
 import 'package:virtus2027/features/cata/presentation/widgets/cata_aprobacion_modal.dart';
 import 'package:virtus2027/features/cata/presentation/widgets/cata_espera_aprobacion_dialog.dart';
+import 'package:virtus2027/features/cata/presentation/widgets/cata_incidencia_dialog.dart';
 import 'package:virtus2027/features/cata/presentation/utils/cata_grupo_style.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:virtus2027/features/cata/presentation/v2/cata_form_v2.dart';
 import 'package:virtus2027/features/cata/presentation/v2/cata_header_v2.dart';
 import 'package:virtus2027/features/cata/presentation/v2/cata_v2_theme.dart';
+import 'package:virtus2027/features/cata/presentation/v3/cata_form_v3.dart';
+import 'package:virtus2027/features/cata/presentation/v3/ficha_version_toggle.dart';
+import 'package:virtus2027/features/cata/presentation/v4/cata_form_v4.dart';
 import 'package:virtus2027/features/dashboard/domain/muestra_en_tanda.dart';
 import 'package:virtus2027/features/home/data/dispositivos_repository.dart';
 import 'package:virtus2027/features/pruebas/presentation/trucos_panel.dart';
@@ -31,6 +38,7 @@ class CataPage extends StatefulWidget {
     required this.esPresidente,
     this.mesaId,
     this.colorPrimario,
+    this.concursoId,
     this.concursoNombre,
     this.mesaNumero,
     this.tandaNumero,
@@ -50,6 +58,7 @@ class CataPage extends StatefulWidget {
   final bool esPresidente;
   final String? mesaId;
   final String? colorPrimario;
+  final String? concursoId;
   final String? concursoNombre;
   final int? mesaNumero;
   final int? tandaNumero;
@@ -80,17 +89,31 @@ class _CataPageState extends State<CataPage> {
   /// Criterios a resaltar tras pulsar Enviar con ficha incompleta.
   Set<String> _criteriosResaltados = {};
   Timer? _resalteTimer;
+  Timer? _retryEnvioTimer;
+  bool _envioEnVuelo = false;
+  String? _bannerEnvio;
   String? _error;
   CataPageRealtimeSync? _realtimeSalida;
+  /// UI de ficha. En concurso siempre V4; V2/V3 solo con [esModoPruebas].
+  FichaUiVersion _fichaUi = FichaUiVersion.v4;
+  static const _prefsFichaUi = 'ficha_ui_version';
+
+  bool get _permiteFichaV3 => categoriaPermiteFichaV3(
+        nombre: widget.categoria.nombre,
+        codigo: widget.categoria.codigo,
+      );
 
   @override
   void initState() {
     super.initState();
+    unawaited(AppWakelock.enableForSession());
+    RealtimeReconnectBus.addListener(_onRealtimeReconnect);
     _ficha = FichaDefinicion.deCategoria(
       widget.categoria.ficha,
       nombre: widget.categoria.nombre,
       codigo: widget.categoria.codigo,
     );
+    if (esModoPruebas) unawaited(_cargarPreferenciaFichaUi());
     // Sin valores por defecto: total empieza en 0 y suma al marcar.
     _cargarPuntuacion();
     if (!widget.esPresidente) {
@@ -104,11 +127,50 @@ class _CataPageState extends State<CataPage> {
     }
   }
 
+  Future<void> _cargarPreferenciaFichaUi() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefsFichaUi);
+      if (!mounted || raw == null) return;
+      final parsed = switch (raw) {
+        'v2' => FichaUiVersion.v2,
+        'v3' => FichaUiVersion.v3,
+        'v4' => FichaUiVersion.v4,
+        _ => null,
+      };
+      if (parsed == null) return;
+      if (parsed == FichaUiVersion.v3 && !_permiteFichaV3) return;
+      setState(() => _fichaUi = parsed);
+    } catch (_) {}
+  }
+
+  Future<void> _setFichaUi(FichaUiVersion value) async {
+    setState(() => _fichaUi = value);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _prefsFichaUi,
+        switch (value) {
+          FichaUiVersion.v2 => 'v2',
+          FichaUiVersion.v3 => 'v3',
+          FichaUiVersion.v4 => 'v4',
+        },
+      );
+    } catch (_) {}
+  }
+
   @override
   void dispose() {
     _resalteTimer?.cancel();
+    _retryEnvioTimer?.cancel();
+    RealtimeReconnectBus.removeListener(_onRealtimeReconnect);
     _realtimeSalida?.dispose();
     super.dispose();
+  }
+
+  void _onRealtimeReconnect() {
+    if (!mounted) return;
+    unawaited(_cargarPuntuacion());
   }
 
   /// Cierra diálogos (p. ej. «Revisar mi puntuación») y vuelve al dashboard.
@@ -212,27 +274,55 @@ class _CataPageState extends State<CataPage> {
 
   Future<void> _cargarPuntuacion() async {
     try {
-      final guardada = await _repository.getPuntuacion(
+      var guardada = await _repository.getPuntuacion(
         catadorId: widget.catador.id,
         muestraId: widget.muestra.muestraId,
         tandaId: widget.tanda.id,
       );
 
+      // Recata: si la nota sigue 'aprobada' pero la muestra está abierta,
+      // intentamos desbloquear en BD; si el trigger lo impide, editamos en UI.
+      var forzarEditable = false;
+      if (guardada != null && guardada.soloLectura) {
+        final ok = await _repository.desbloquearPuntuacionesSiRecata(
+          tandaId: widget.tanda.id,
+          muestraId: widget.muestra.muestraId,
+        );
+        if (ok) {
+          guardada = await _repository.getPuntuacion(
+            catadorId: widget.catador.id,
+            muestraId: widget.muestra.muestraId,
+            tandaId: widget.tanda.id,
+          );
+        } else {
+          final admite = await _repository.muestraAdmiteEdicion(
+            tandaId: widget.tanda.id,
+            muestraId: widget.muestra.muestraId,
+          );
+          forzarEditable = admite;
+        }
+      }
+
       if (!mounted) return;
 
       setState(() {
         if (guardada != null) {
-          _scores.addAll(
-            _ficha.remapScores(
-              guardada.scores,
-              fichaDb: widget.categoria.ficha,
-            ),
-          );
-          _soloLectura = guardada.soloLectura;
-          _puntuacionEnviada =
-              guardada.estado.toLowerCase() == 'enviada' && !guardada.soloLectura;
+          _scores
+            ..clear()
+            ..addAll(
+              _ficha.remapScores(
+                guardada.scores,
+                fichaDb: widget.categoria.ficha,
+              ),
+            );
+          _soloLectura = forzarEditable ? false : guardada.soloLectura;
+          _puntuacionEnviada = forzarEditable
+              ? false
+              : (guardada.estado.toLowerCase() == 'enviada' &&
+                  !guardada.soloLectura);
         }
         _cargando = false;
+        _error = null;
       });
 
       if (_puntuacionEnviada) {
@@ -291,7 +381,12 @@ class _CataPageState extends State<CataPage> {
   bool get _formularioEditable => !_soloLectura && !_puntuacionEnviada;
 
   void _habilitarRevision() {
-    setState(() => _puntuacionEnviada = false);
+    _pararReintentoEnvio();
+    setState(() {
+      _puntuacionEnviada = false;
+      _guardando = false;
+      _bannerEnvio = null;
+    });
     _realtimeSalida?.setPollRespaldoActivo(false);
   }
 
@@ -314,6 +409,30 @@ class _CataPageState extends State<CataPage> {
       _criteriosResaltados = {};
     });
     _realtimeSalida?.setPollRespaldoActivo(false);
+  }
+
+  Future<void> _confirmarReiniciar() async {
+    if (!_formularioEditable) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reiniciar'),
+        content: Text(
+          '¿Borrar los ${_ficha.todosLosCriterios.length} criterios?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Sí'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) _reiniciar();
   }
 
   MedallaUmbrales get _umbralesMedalla => MedallaUmbrales(
@@ -350,36 +469,129 @@ class _CataPageState extends State<CataPage> {
       });
       return;
     }
-    _guardar('enviada');
+    _iniciarEnvioConReintento();
   }
 
-  Future<void> _guardar(String estado) async {
+  void _iniciarEnvioConReintento() {
     if (!_formularioEditable || _guardando) return;
+    setState(() {
+      _guardando = true;
+      _bannerEnvio = null;
+    });
+    unawaited(_intentarEnviarPuntuacion(esReintento: false));
+  }
 
-    setState(() => _guardando = true);
+  bool _esErrorMuestraCerrada(Object error) {
+    final msg = _formatError(error).toUpperCase();
+    return msg.contains('MUESTRA_APROBADA') ||
+        msg.contains('MUESTRA YA') ||
+        msg.contains('YA FUE CERRADA');
+  }
+
+  Future<bool> _muestraSigueActiva() async {
+    try {
+      final estado = await _repository.getEstadoMuestra(
+        tandaId: widget.tanda.id,
+        muestraId: widget.muestra.muestraId,
+      );
+      if (estado == null) return true;
+      return estado == 'activa' || estado == 'en_curso';
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<void> _intentarEnviarPuntuacion({required bool esReintento}) async {
+    if (!mounted || _envioEnVuelo || _puntuacionEnviada) return;
+    _envioEnVuelo = true;
 
     try {
+      if (esReintento) {
+        final activa = await _muestraSigueActiva();
+        if (!activa) {
+          _pararReintentoEnvio();
+          if (!mounted) return;
+          setState(() {
+            _guardando = false;
+            _bannerEnvio = widget.esPresidente
+                ? 'La muestra ya fue cerrada'
+                : 'La muestra ya está cerrada por el presidente';
+          });
+          return;
+        }
+      }
+
       await _repository.savePuntuacion(
         catadorId: widget.catador.id,
         muestraId: widget.muestra.muestraId,
         tandaId: widget.tanda.id,
         scores: Map<String, num>.from(_scores),
         total: _totalActual,
-        estado: estado,
+        estado: 'enviada',
       );
 
       if (!mounted) return;
-
-      if (estado == 'enviada') {
-        setState(() => _puntuacionEnviada = true);
-        _realtimeSalida?.setPollRespaldoActivo(true);
-        if (widget.esPresidente) {
-          await _mostrarModalPresidente();
-        } else {
-          await _mostrarModalCatador();
-        }
+      _pararReintentoEnvio();
+      setState(() {
+        _guardando = false;
+        _puntuacionEnviada = true;
+        _bannerEnvio = 'Enviada ✔';
+      });
+      _realtimeSalida?.setPollRespaldoActivo(true);
+      if (widget.esPresidente) {
+        await _mostrarModalPresidente();
+      } else {
+        await _mostrarModalCatador();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      if (_esErrorMuestraCerrada(e)) {
+        _pararReintentoEnvio();
+        setState(() {
+          _guardando = false;
+          _bannerEnvio = widget.esPresidente
+              ? 'La muestra ya fue cerrada'
+              : 'La muestra ya está cerrada por el presidente';
+        });
         return;
       }
+      setState(() {
+        _bannerEnvio = 'NOTA NO ENVIADA · reintentando...';
+      });
+      _retryEnvioTimer ??= Timer.periodic(
+        const Duration(seconds: 3),
+        (_) => unawaited(_intentarEnviarPuntuacion(esReintento: true)),
+      );
+    } finally {
+      _envioEnVuelo = false;
+    }
+  }
+
+  void _pararReintentoEnvio() {
+    _retryEnvioTimer?.cancel();
+    _retryEnvioTimer = null;
+  }
+
+  Future<void> _onDescartarIncidencia() async {
+    if (!widget.esPresidente || _guardando) return;
+    final motivo = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => CataIncidenciaDialog(
+        codigoMuestra: widget.muestra.codigoDisplay,
+      ),
+    );
+    if (motivo == null || !mounted) return;
+
+    setState(() => _guardando = true);
+    try {
+      await _repository.marcarIncidencia(
+        tandaId: widget.tanda.id,
+        muestraId: widget.muestra.muestraId,
+        motivo: motivo,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(widget.muestra.orden);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -428,6 +640,7 @@ class _CataPageState extends State<CataPage> {
           muestraId: widget.muestra.muestraId,
           codigoMuestra: widget.muestra.codigoDisplay,
           repository: _repository,
+          concursoId: widget.concursoId ?? '',
           onVolver: () => Navigator.of(dialogContext).pop(),
           onRevisar: () {
             Navigator.of(dialogContext).pop();
@@ -517,38 +730,100 @@ class _CataPageState extends State<CataPage> {
     }
 
     final unico = _criterioUnicoPendiente;
-    final form = CataFormV2(
-      ficha: _ficha,
-      scores: _scores,
-      readOnly: !_formularioEditable,
-      onScoreChanged: _onScoreChanged,
-      totalActual: _totalActual,
-      umbrales: _umbralesMedalla,
-      faltanCriterios: _faltanCriterios,
-      criteriosCompletos:
-          _ficha.todosLosCriterios.length - _faltanCriterios,
-      codigoMuestra: widget.muestra.codigoDisplay,
-      categoriaNombre: widget.categoria.nombre,
-      guardando: _guardando,
-      fichaCompleta: _todosCompletos,
-      criteriosResaltados: _criteriosResaltados,
-      idCriterioUnicoPendiente: unico?.id,
-      nombreCriterioUnicoPendiente: unico?.label,
-      onEnviar: _onEnviar,
-      onReiniciar: _formularioEditable ? _reiniciar : null,
-      onDescartar:
-          widget.esPresidente ? () => Navigator.of(context).pop() : null,
-    );
+    final criteriosCompletos =
+        _ficha.todosLosCriterios.length - _faltanCriterios;
+    final versionActiva =
+        esModoPruebas ? _fichaUi : FichaUiVersion.v4;
+    final selector = esModoPruebas
+        ? FichaVersionToggle(
+            version: versionActiva == FichaUiVersion.v3 && !_permiteFichaV3
+                ? FichaUiVersion.v4
+                : versionActiva,
+            permiteV3: _permiteFichaV3,
+            onChanged: (v) => unawaited(_setFichaUi(v)),
+          )
+        : null;
+
+    final Widget form = switch (versionActiva) {
+      FichaUiVersion.v3 when _permiteFichaV3 => CataFormV3(
+          ficha: _ficha,
+          scores: _scores,
+          readOnly: !_formularioEditable,
+          onScoreChanged: _onScoreChanged,
+          totalActual: _totalActual,
+          umbrales: _umbralesMedalla,
+          faltanCriterios: _faltanCriterios,
+          criteriosCompletos: criteriosCompletos,
+          codigoMuestra: widget.muestra.codigoDisplay,
+          categoriaNombre: widget.categoria.nombre,
+          guardando: _guardando,
+          fichaCompleta: _todosCompletos,
+          criteriosResaltados: _criteriosResaltados,
+          idCriterioUnicoPendiente: unico?.id,
+          nombreCriterioUnicoPendiente: unico?.label,
+          onEnviar: _onEnviar,
+          onReiniciar: _formularioEditable ? _confirmarReiniciar : null,
+          onDescartar:
+              widget.esPresidente ? _onDescartarIncidencia : null,
+          bannerEnvio: _bannerEnvio,
+          selectorVersion: selector,
+        ),
+      FichaUiVersion.v2 => CataFormV2(
+          ficha: _ficha,
+          scores: _scores,
+          readOnly: !_formularioEditable,
+          onScoreChanged: _onScoreChanged,
+          totalActual: _totalActual,
+          umbrales: _umbralesMedalla,
+          faltanCriterios: _faltanCriterios,
+          criteriosCompletos: criteriosCompletos,
+          codigoMuestra: widget.muestra.codigoDisplay,
+          categoriaNombre: widget.categoria.nombre,
+          guardando: _guardando,
+          fichaCompleta: _todosCompletos,
+          criteriosResaltados: _criteriosResaltados,
+          idCriterioUnicoPendiente: unico?.id,
+          nombreCriterioUnicoPendiente: unico?.label,
+          onEnviar: _onEnviar,
+          onReiniciar: _formularioEditable ? _confirmarReiniciar : null,
+          onDescartar:
+              widget.esPresidente ? _onDescartarIncidencia : null,
+          bannerEnvio: _bannerEnvio,
+          selectorVersion: selector,
+        ),
+      _ => CataFormV4(
+          ficha: _ficha,
+          scores: _scores,
+          readOnly: !_formularioEditable,
+          onScoreChanged: _onScoreChanged,
+          totalActual: _totalActual,
+          umbrales: _umbralesMedalla,
+          criteriosCompletos: criteriosCompletos,
+          codigoMuestra: widget.muestra.codigoDisplay,
+          categoriaNombre: widget.categoria.nombre,
+          guardando: _guardando,
+          fichaCompleta: _todosCompletos,
+          criteriosResaltados: _criteriosResaltados,
+          onEnviar: _onEnviar,
+          onReiniciar: _formularioEditable ? _confirmarReiniciar : null,
+          onIncidencia:
+              widget.esPresidente ? _onDescartarIncidencia : null,
+          bannerEnvio: _bannerEnvio,
+          selectorVersion: selector,
+        ),
+    };
 
     // TEMPORAL: botón relleno >87 (solo esModoPruebas). Quitar en producción.
     if (!esModoPruebas || !_formularioEditable) return form;
 
+    // Rayito: esquina inferior derecha del panel de criterios (no tapa
+    // banda de grupo ni etiquetas; el panel lateral queda a la derecha).
     return Stack(
       children: [
         form,
         Positioned(
-          left: 16,
-          bottom: 16,
+          right: 248,
+          bottom: 10,
           child: Material(
             color: const Color(0xFFE65100),
             elevation: 6,
@@ -557,12 +832,12 @@ class _CataPageState extends State<CataPage> {
               customBorder: const CircleBorder(),
               onTap: _rellenarPruebaAlto,
               child: const SizedBox(
-                width: 64,
-                height: 64,
+                width: 48,
+                height: 48,
                 child: Icon(
                   Icons.bolt,
                   color: Colors.white,
-                  size: 40,
+                  size: 28,
                 ),
               ),
             ),

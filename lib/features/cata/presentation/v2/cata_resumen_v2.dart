@@ -23,6 +23,7 @@ class CataResumenV2 extends StatelessWidget {
     this.umbrales = MedallaUmbrales.defecto,
     this.onReiniciar,
     this.onDescartar,
+    this.bannerEnvio,
   });
 
   final double totalActual;
@@ -41,6 +42,7 @@ class CataResumenV2 extends StatelessWidget {
   final MedallaUmbrales umbrales;
   final VoidCallback? onReiniciar;
   final VoidCallback? onDescartar;
+  final String? bannerEnvio;
 
   static const _rojoPastel = Color(0xFFFFEBEE);
   static const _rojoPastelBorde = Color(0xFFEF9A9A);
@@ -176,6 +178,39 @@ class CataResumenV2 extends StatelessWidget {
                   const SizedBox(height: 10),
                   const Divider(height: 1, color: CataV2Theme.borde),
                   const SizedBox(height: 10),
+
+                  if (bannerEnvio != null && bannerEnvio!.isNotEmpty) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: bannerEnvio!.startsWith('Enviada')
+                            ? const Color(0xFFE8F5E9)
+                            : _rojoPastel,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: bannerEnvio!.startsWith('Enviada')
+                              ? const Color(0xFF81C784)
+                              : _rojoPastelBorde,
+                        ),
+                      ),
+                      child: Text(
+                        bannerEnvio!,
+                        textAlign: TextAlign.center,
+                        style: CataV2Theme.text(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: bannerEnvio!.startsWith('Enviada')
+                              ? const Color(0xFF2E7D32)
+                              : _rojoPastelTexto,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
 
                   // 6. Enviar (más alto).
                   if (readOnly)

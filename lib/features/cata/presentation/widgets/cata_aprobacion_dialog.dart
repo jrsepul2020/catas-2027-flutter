@@ -6,6 +6,7 @@ import 'package:virtus2027/features/cata/presentation/utils/cata_colors.dart';
 import 'package:virtus2027/features/cata/presentation/utils/cata_grupo_style.dart';
 import 'package:virtus2027/features/cata/presentation/v2/cata_medalla_widget.dart';
 import 'package:virtus2027/features/cata/presentation/v2/cata_v2_theme.dart';
+import 'package:virtus2027/features/cata/presentation/widgets/cata_aprobar_incompleto_dialog.dart';
 
 class CataAprobacionDialog extends StatelessWidget {
   const CataAprobacionDialog({
@@ -15,6 +16,7 @@ class CataAprobacionDialog extends StatelessWidget {
     required this.onAprobar,
     required this.onAprobarAdmin,
     required this.onRevisar,
+    this.concursoId = '',
   });
 
   final ResumenAprobacionMesa resumen;
@@ -22,6 +24,7 @@ class CataAprobacionDialog extends StatelessWidget {
   final VoidCallback onAprobar;
   final VoidCallback onAprobarAdmin;
   final VoidCallback onRevisar;
+  final String concursoId;
 
   @override
   Widget build(BuildContext context) {
@@ -66,6 +69,7 @@ class CataAprobacionDialog extends StatelessWidget {
                         onRevisar: onRevisar,
                         puedeAprobar: resumen.todosHanPuntuado,
                         puedeAprobarAdmin: resumen.puntuacionesRecibidas > 0,
+                        concursoId: concursoId,
                       ),
                     ),
                   ],
@@ -590,6 +594,7 @@ class _PanelLateral extends StatelessWidget {
     required this.onRevisar,
     required this.puedeAprobar,
     required this.puedeAprobarAdmin,
+    required this.concursoId,
   });
 
   final ResumenAprobacionMesa resumen;
@@ -599,6 +604,17 @@ class _PanelLateral extends StatelessWidget {
   final VoidCallback onRevisar;
   final bool puedeAprobar;
   final bool puedeAprobarAdmin;
+  final String concursoId;
+
+  Future<void> _onAprobarAdmin(BuildContext context) async {
+    final ok = await confirmarAprobarIncompleto(
+      context: context,
+      resumen: resumen,
+      concursoId: concursoId,
+    );
+    if (!ok) return;
+    onAprobarAdmin();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -744,7 +760,9 @@ class _PanelLateral extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         FilledButton(
-          onPressed: aprobando || !puedeAprobarAdmin ? null : onAprobarAdmin,
+          onPressed: aprobando || !puedeAprobarAdmin
+              ? null
+              : () => _onAprobarAdmin(context),
           style: FilledButton.styleFrom(
             backgroundColor: const Color(0xFFE65100),
             padding: const EdgeInsets.symmetric(vertical: 12),
@@ -753,7 +771,8 @@ class _PanelLateral extends StatelessWidget {
             ),
           ),
           child: Text(
-            'APROBAR CATA ADMIN',
+            'APROBAR CON LOS QUE HAY '
+            '(${resumen.puntuacionesRecibidas} de ${resumen.totalCatadores})',
             textAlign: TextAlign.center,
             style: VirtusTextStyles.plain(
               fontWeight: FontWeight.w800,

@@ -27,6 +27,8 @@ class CataFormV2 extends StatelessWidget {
     this.nombreCriterioUnicoPendiente,
     this.onReiniciar,
     this.onDescartar,
+    this.bannerEnvio,
+    this.selectorVersion,
   });
 
   final FichaDefinicion ficha;
@@ -47,6 +49,8 @@ class CataFormV2 extends StatelessWidget {
   final String? nombreCriterioUnicoPendiente;
   final VoidCallback? onReiniciar;
   final VoidCallback? onDescartar;
+  final String? bannerEnvio;
+  final Widget? selectorVersion;
 
   @override
   Widget build(BuildContext context) {
@@ -66,24 +70,40 @@ class CataFormV2 extends StatelessWidget {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(CataV2Theme.radio - 1),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Column(
-                      children: [
-                        for (final grupo in ficha.grupos)
-                          Expanded(
-                            flex: grupo.criterios.length,
-                            child: GrupoCriteriosV2(
-                              grupo: grupo,
-                              scores: scores,
-                              readOnly: readOnly,
-                              criteriosResaltados: criteriosResaltados,
-                              idCriterioUnicoPendiente: idCriterioUnicoPendiente,
-                              onScoreChanged: onScoreChanged,
-                            ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (selectorVersion != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: selectorVersion!,
                           ),
-                      ],
-                    ),
+                        ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Column(
+                            children: [
+                              for (final grupo in ficha.grupos)
+                                Expanded(
+                                  flex: grupo.criterios.length,
+                                  child: GrupoCriteriosV2(
+                                    grupo: grupo,
+                                    scores: scores,
+                                    readOnly: readOnly,
+                                    criteriosResaltados: criteriosResaltados,
+                                    idCriterioUnicoPendiente:
+                                        idCriterioUnicoPendiente,
+                                    onScoreChanged: onScoreChanged,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -108,6 +128,7 @@ class CataFormV2 extends StatelessWidget {
                 onEnviar: onEnviar,
                 onReiniciar: onReiniciar,
                 onDescartar: onDescartar,
+                bannerEnvio: bannerEnvio,
               ),
             ),
           ],

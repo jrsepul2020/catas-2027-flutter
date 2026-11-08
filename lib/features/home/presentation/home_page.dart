@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:virtus2027/core/layout/tablet_layout.dart';
+import 'package:virtus2027/core/services/app_wakelock.dart';
 import 'package:virtus2027/core/theme/virtus_text_styles.dart';
 import 'package:virtus2027/core/layout/tablet_viewport.dart';
 import 'package:virtus2027/core/widgets/app_version_label.dart';
@@ -28,6 +29,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    AppWakelock.disable();
     _dispositivosFuture = _repository.fetchDispositivos();
   }
 

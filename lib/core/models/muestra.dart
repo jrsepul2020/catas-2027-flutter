@@ -8,6 +8,7 @@ class Muestra {
     required this.activo,
     this.categoriaId,
     this.empresaId,
+    this.codigoCiego,
     this.codigo,
     this.codigoBarras,
     this.codigoTexto,
@@ -31,8 +32,12 @@ class Muestra {
   final bool activo;
   final String? categoriaId;
   final String? empresaId;
+  /// Código ciego (1–9999). API lo entrega como número, nunca "0788".
+  final int? codigoCiego;
+  /// Alias legacy de [codigoCiego] (mismo valor entero).
   final int? codigo;
   final String? codigoBarras;
+  /// Etiqueta de pantalla (p. ej. DEMO-001). No usar para lógica ni búsqueda.
   final String? codigoTexto;
   final String? categoria;
   final String? categoriaCata;
@@ -47,7 +52,23 @@ class Muestra {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
+  /// Manual admin (1–999): cata pero no premia.
+  bool get noPremia {
+    final c = codigoCiego ?? codigo;
+    return c != null && c < 1000;
+  }
+
+  /// Texto de 4 cifras con ceros ("0788"). No persistir este string.
+  String get codigoCiegoDisplay {
+    final c = codigoCiego ?? codigo;
+    if (c == null) return '—';
+    return c.toString().padLeft(4, '0');
+  }
+
   factory Muestra.fromJson(Map<String, dynamic> json) {
+    final ciego = JsonHelpers.intValue(
+      json['codigo_ciego'] ?? json['codigo'],
+    );
     return Muestra(
       id: JsonHelpers.uuid(json['id']) ?? '',
       concursoId: JsonHelpers.uuid(json['concurso_id']) ?? '',
@@ -55,14 +76,18 @@ class Muestra {
       activo: JsonHelpers.boolValue(json['activo'], defaultValue: true),
       categoriaId: JsonHelpers.uuid(json['categoria_id']),
       empresaId: JsonHelpers.uuid(json['empresa_id']),
-      codigo: JsonHelpers.intValue(json['codigo']),
-      codigoBarras: JsonHelpers.string(json['codigo_barras'] ?? json['codigobarras']),
-      codigoTexto: JsonHelpers.string(json['codigo_texto'] ?? json['codigotexto']),
+      codigoCiego: ciego,
+      codigo: ciego,
+      codigoBarras:
+          JsonHelpers.string(json['codigo_barras'] ?? json['codigobarras']),
+      codigoTexto:
+          JsonHelpers.string(json['codigo_texto'] ?? json['codigotexto']),
       categoria: JsonHelpers.string(json['categoria']),
       categoriaCata: JsonHelpers.string(
         json['categoria_cata'] ?? json['categoriadecata'],
       ),
-      categoriaOiv: JsonHelpers.string(json['categoria_oiv'] ?? json['categoriaoiv']),
+      categoriaOiv:
+          JsonHelpers.string(json['categoria_oiv'] ?? json['categoriaoiv']),
       descripcion: JsonHelpers.string(json['descripcion']),
       origen: JsonHelpers.string(json['origen']),
       pais: JsonHelpers.string(json['pais']),
@@ -76,6 +101,7 @@ class Muestra {
   }
 
   Map<String, dynamic> toJson() {
+    final ciego = codigoCiego ?? codigo;
     return {
       'id': id,
       'concurso_id': concursoId,
@@ -83,7 +109,8 @@ class Muestra {
       'activo': activo,
       'categoria_id': categoriaId,
       'empresa_id': empresaId,
-      'codigo': codigo,
+      'codigo_ciego': ciego,
+      'codigo': ciego,
       'codigo_barras': codigoBarras,
       'codigo_texto': codigoTexto,
       'categoria': categoria,
@@ -99,5 +126,12 @@ class Muestra {
       'created_at': createdAt?.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
     };
+  }
+
+  /// Convierte texto de escáner/búsqueda ("0788") a entero para `.eq` / comparar.
+  static int? parseCodigoCiegoInput(String? raw) {
+    final t = raw?.trim();
+    if (t == null || t.isEmpty) return null;
+    return int.tryParse(t);
   }
 }

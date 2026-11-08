@@ -55,11 +55,24 @@ class CataRepository {
           'estado': estado,
         };
 
-        final existing = await getPuntuacion(
+        var existing = await getPuntuacion(
           catadorId: catadorId,
           muestraId: muestraId,
           tandaId: tandaId,
         );
+
+        // Recata: si sigue 'aprobada' y la muestra está abierta, desbloquear antes.
+        if (existing != null && existing.soloLectura) {
+          await desbloquearPuntuacionesSiRecata(
+            tandaId: tandaId,
+            muestraId: muestraId,
+          );
+          existing = await getPuntuacion(
+            catadorId: catadorId,
+            muestraId: muestraId,
+            tandaId: tandaId,
+          );
+        }
 
         if (existing != null) {
           await _client
@@ -85,6 +98,20 @@ class CataRepository {
         final tandaDbId = _toDbId(tandaId);
         final muestraDbId = _toDbId(muestraId);
 
+        // Antes de `activa`: tras recata admin las notas están en `enviada`
+        // (o `aprobada`). Pasar a `borrador` conservando scores evita que el
+        // catador, al entrar por Realtime, vea la ficha como ya enviada.
+        // `enviada`→`borrador` no lo bloquea el candado; `aprobada` solo si
+        // la muestra ya no está completada (p. ej. tras `reabrir_muestra`).
+        try {
+          await _client
+              .from('puntuaciones')
+              .update({'estado': 'borrador'})
+              .eq('tanda_id', tandaDbId)
+              .eq('muestra_id', muestraDbId)
+              .inFilter('estado', ['aprobada', 'enviada']);
+        } catch (_) {}
+
         await _client
             .from('tanda_muestras')
             .update({'estado': 'pendiente'})
@@ -98,6 +125,92 @@ class CataRepository {
             .eq('muestra_id', muestraDbId);
       },
     );
+  }
+
+  /// Tras ABRIR CATA en una muestra reabierta: `aprobada`/`enviada` → `borrador`
+  /// (mismas notas). No usar a mitad de cata sobre envíos frescos.
+  Future<bool> prepararPuntuacionesParaRecata({
+    required String tandaId,
+    required String muestraId,
+  }) async {
+    final estado = await getEstadoMuestra(
+      tandaId: tandaId,
+      muestraId: muestraId,
+    );
+    if (estado != 'activa' &&
+        estado != 'en_curso' &&
+        estado != 'pendiente') {
+      return false;
+    }
+    try {
+      await Diagnostico.escritura(
+        tipo: 'recata_preparar_edicion',
+        tabla: 'puntuaciones',
+        match: {'muestra_id': muestraId, 'tanda_id': tandaId},
+        run: () async {
+          final tandaDbId = _toDbId(tandaId);
+          final muestraDbId = _toDbId(muestraId);
+          await _client
+              .from('puntuaciones')
+              .update({'estado': 'borrador'})
+              .eq('tanda_id', tandaDbId)
+              .eq('muestra_id', muestraDbId)
+              .inFilter('estado', ['aprobada', 'enviada']);
+        },
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Si quedaron filas `aprobada` con la muestra ya abierta, pasa a `borrador`.
+  /// Devuelve `false` si el candado de BD lo impide (muestra aún cerrada).
+  Future<bool> desbloquearPuntuacionesSiRecata({
+    required String tandaId,
+    required String muestraId,
+  }) async {
+    final estado = await getEstadoMuestra(
+      tandaId: tandaId,
+      muestraId: muestraId,
+    );
+    if (estado != 'activa' &&
+        estado != 'en_curso' &&
+        estado != 'pendiente') {
+      return false;
+    }
+    try {
+      await Diagnostico.escritura(
+        tipo: 'recata_desbloquear',
+        tabla: 'puntuaciones',
+        match: {'muestra_id': muestraId, 'tanda_id': tandaId},
+        run: () async {
+          await _client
+              .from('puntuaciones')
+              .update({'estado': 'borrador'})
+              .eq('tanda_id', _toDbId(tandaId))
+              .eq('muestra_id', _toDbId(muestraId))
+              .eq('estado', 'aprobada');
+        },
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// True si la muestra admite cata/recata (no está cerrada).
+  Future<bool> muestraAdmiteEdicion({
+    required String tandaId,
+    required String muestraId,
+  }) async {
+    final estado = await getEstadoMuestra(
+      tandaId: tandaId,
+      muestraId: muestraId,
+    );
+    return estado == 'activa' ||
+        estado == 'en_curso' ||
+        estado == 'pendiente';
   }
 
   Future<ResumenAprobacionMesa> getResumenMesa({
@@ -166,6 +279,40 @@ class CataRepository {
       catadores: catadores,
       codigoMuestra: codigoMuestra,
     );
+  }
+
+  /// Marca la muestra como incidencia de mesa (pausa hasta admin).
+  Future<void> marcarIncidencia({
+    required String tandaId,
+    required String muestraId,
+    required String motivo,
+  }) async {
+    await Diagnostico.escritura(
+      tipo: 'incidencia',
+      tabla: 'tanda_muestras',
+      match: {'muestra_id': muestraId, 'tanda_id': tandaId},
+      run: () async {
+        await _client.from('tanda_muestras').update({
+          'estado': 'incidencia',
+          'incidencia_motivo': motivo,
+        }).eq('tanda_id', _toDbId(tandaId)).eq('muestra_id', _toDbId(muestraId));
+      },
+    );
+  }
+
+  /// Estado actual de la fila en `tanda_muestras` (una lectura puntual).
+  Future<String?> getEstadoMuestra({
+    required String tandaId,
+    required String muestraId,
+  }) async {
+    final row = await _client
+        .from('tanda_muestras')
+        .select('estado')
+        .eq('tanda_id', _toDbId(tandaId))
+        .eq('muestra_id', _toDbId(muestraId))
+        .maybeSingle();
+    if (row == null) return null;
+    return (row['estado']?.toString() ?? '').toLowerCase().trim();
   }
 
   Future<void> aprobarMuestra({

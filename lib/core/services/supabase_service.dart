@@ -472,9 +472,11 @@ class SupabaseService {
         muestraId: row.muestraId,
         tandaMuestraId: row.id,
         nombre: muestra?.nombre,
-        codigo: muestra?.codigo,
-        codigoCiego: JsonHelpers.string(muestraRaw?['codigo_ciego']),
-        codigoTexto: JsonHelpers.string(muestraRaw?['codigo_texto']),
+        codigo: muestra?.codigoCiego ?? muestra?.codigo,
+        codigoCiego: muestra?.codigoCiego ??
+            JsonHelpers.intValue(muestraRaw?['codigo_ciego']),
+        codigoTexto: muestra?.codigoTexto ??
+            JsonHelpers.string(muestraRaw?['codigo_texto']),
         categoriaId: catId,
         categoriaNombre: catId == null ? null : nombresCategoria[catId],
         categoriaCata: muestra?.categoriaCata,

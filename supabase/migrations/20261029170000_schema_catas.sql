@@ -66,11 +66,14 @@ CREATE TABLE IF NOT EXISTS muestras (
   id           serial PRIMARY KEY,
   concurso_id  integer,
   categoria_id integer,
-  codigo_ciego text NOT NULL,
+  -- Entero 1–9999, único global. 1–999 = manual (no premia); 1000–9999 = web.
+  codigo_ciego integer NOT NULL,
   codigo_texto text,
   activo       boolean DEFAULT true,
   CONSTRAINT muestras_concurso_id_fkey FOREIGN KEY (concurso_id) REFERENCES concursos(id),
-  CONSTRAINT muestras_categoria_id_fkey FOREIGN KEY (categoria_id) REFERENCES categorias(id)
+  CONSTRAINT muestras_categoria_id_fkey FOREIGN KEY (categoria_id) REFERENCES categorias(id),
+  CONSTRAINT muestras_codigo_ciego_check CHECK (codigo_ciego >= 1 AND codigo_ciego <= 9999),
+  CONSTRAINT muestras_codigo_ciego_key UNIQUE (codigo_ciego)
 );
 
 CREATE TABLE IF NOT EXISTS tandas (

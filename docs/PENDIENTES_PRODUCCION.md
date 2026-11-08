@@ -15,6 +15,7 @@ Checklist de cosas a hacer cuando `esModoPruebas` pase a `false` y se use el con
 - [ ] Eliminar o archivar `lib/features/pruebas/` si ya no hace falta.
 - [ ] Limpiar muestras `DEMO-*` y datos de ensayo en Cloud / local.
 - [ ] Quitar o restringir RPC `demo_reiniciar_muestra` en producción.
+- [ ] Confirmar que `reabrir_muestra` sigue REVOKE’d a `anon`/`authenticated` (solo admin / `service_role`).
 
 ## Flujo de cata
 
