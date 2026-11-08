@@ -1,4 +1,4 @@
-package com.virtus.virtus2027
+package com.catas2027
 
 import io.flutter.embedding.android.FlutterActivity
 
