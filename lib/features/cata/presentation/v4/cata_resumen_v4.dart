@@ -65,8 +65,7 @@ class CataResumenV4 extends StatelessWidget {
         ? medalla.label
         : 'se mostrará al completar los $criteriosTotal';
     final totalTexto = fichaCompleta ? _fmt(totalActual) : '--';
-    final mostrarAcciones =
-        (!readOnly && onReiniciar != null) || onIncidencia != null;
+    final mostrarAcciones = !readOnly && onReiniciar != null;
 
     return Padding(
       padding: const EdgeInsets.all(_margenPanel),
@@ -334,7 +333,6 @@ class _TarjetaB extends StatelessWidget {
               const SizedBox(height: 12),
               _AccionesColumna(
                 onReiniciar: onReiniciar,
-                onIncidencia: onIncidencia,
               ),
             ],
           ],
@@ -528,10 +526,9 @@ class _BarraProgreso extends StatelessWidget {
 }
 
 class _AccionesColumna extends StatelessWidget {
-  const _AccionesColumna({this.onReiniciar, this.onIncidencia});
+  const _AccionesColumna({this.onReiniciar});
 
   final VoidCallback? onReiniciar;
-  final VoidCallback? onIncidencia;
 
   @override
   Widget build(BuildContext context) {
@@ -545,16 +542,6 @@ class _AccionesColumna extends StatelessWidget {
             foreground: CataV4Theme.rojoAccion,
             background: CataV4Theme.rojoAccionFondo,
             border: CataV4Theme.rojoAccionBorde,
-          ),
-        if (onReiniciar != null && onIncidencia != null)
-          const SizedBox(height: 8),
-        if (onIncidencia != null)
-          _AccionBoton(
-            label: 'Incidencia',
-            onPressed: onIncidencia,
-            foreground: CataV4Theme.naranjaAccion,
-            background: CataV4Theme.naranjaAccionFondo,
-            border: CataV4Theme.naranjaAccionBorde,
           ),
       ],
     );

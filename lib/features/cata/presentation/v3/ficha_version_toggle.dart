@@ -1,21 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:virtus2027/features/cata/presentation/v2/cata_v2_theme.dart';
 
-/// Versión visual de la ficha (V4 es la de concurso).
-enum FichaUiVersion { v2, v3, v4 }
+/// Versión visual de la ficha (V4 es la de concurso; V5/V5.1 solo vinos / pruebas).
+///
+/// TODO(pre-concurso): eliminar V2, V3, V4 y V5 (Contorno ya descartado en
+/// V5.1; Pastel es el definitivo). En producción solo debe existir una ficha.
+enum FichaUiVersion { v2, v3, v4, v5, v51 }
 
-/// Selector compacto V2 / V3 / V4 (solo [esModoPruebas]).
+/// Selector compacto (solo [esModoPruebas]).
 class FichaVersionToggle extends StatelessWidget {
   const FichaVersionToggle({
     super.key,
     required this.version,
     required this.onChanged,
     this.permiteV3 = true,
+    this.permiteV5 = true,
   });
 
   final FichaUiVersion version;
   final ValueChanged<FichaUiVersion> onChanged;
   final bool permiteV3;
+  /// V5 y V5.1 (vinos).
+  final bool permiteV5;
 
   @override
   Widget build(BuildContext context) {
@@ -44,6 +50,18 @@ class FichaVersionToggle extends StatelessWidget {
             selected: version == FichaUiVersion.v4,
             onTap: () => onChanged(FichaUiVersion.v4),
           ),
+          if (permiteV5) ...[
+            _Chip(
+              label: 'V5',
+              selected: version == FichaUiVersion.v5,
+              onTap: () => onChanged(FichaUiVersion.v5),
+            ),
+            _Chip(
+              label: 'V5.1',
+              selected: version == FichaUiVersion.v51,
+              onTap: () => onChanged(FichaUiVersion.v51),
+            ),
+          ],
         ],
       ),
     );

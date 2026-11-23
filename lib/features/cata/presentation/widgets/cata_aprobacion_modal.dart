@@ -17,6 +17,7 @@ class CataAprobacionModal extends StatefulWidget {
     required this.onAprobar,
     this.repository,
     this.concursoId = '',
+    this.identidad,
   });
 
   final String mesaId;
@@ -28,6 +29,7 @@ class CataAprobacionModal extends StatefulWidget {
   final Future<void> Function() onAprobar;
   final CataRepository? repository;
   final String concursoId;
+  final String? identidad;
 
   @override
   State<CataAprobacionModal> createState() => _CataAprobacionModalState();
@@ -89,7 +91,7 @@ class _CataAprobacionModalState extends State<CataAprobacionModal> {
       );
       if (!mounted) return;
       setState(() {
-        _resumen = resumen;
+        _resumen = resumen.fusionarEstable(_resumen);
         _cargandoInicial = false;
         _actualizando = false;
         _error = null;
@@ -152,6 +154,7 @@ class _CataAprobacionModalState extends State<CataAprobacionModal> {
           onAprobar: _aprobar,
           onAprobarAdmin: _aprobar,
           concursoId: widget.concursoId,
+          identidad: widget.identidad,
         ),
         if (_actualizando)
           Positioned(

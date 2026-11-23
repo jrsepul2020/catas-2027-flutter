@@ -17,6 +17,7 @@ class CataAprobacionDialog extends StatelessWidget {
     required this.onAprobarAdmin,
     required this.onRevisar,
     this.concursoId = '',
+    this.identidad,
   });
 
   final ResumenAprobacionMesa resumen;
@@ -25,6 +26,7 @@ class CataAprobacionDialog extends StatelessWidget {
   final VoidCallback onAprobarAdmin;
   final VoidCallback onRevisar;
   final String concursoId;
+  final String? identidad;
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +42,10 @@ class CataAprobacionDialog extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const _Header(),
+            _Header(
+              codigoMuestra: resumen.codigoMuestra,
+              identidad: identidad,
+            ),
             if (resumen.todosHanPuntuado)
               const _BannerTodos()
             else
@@ -84,26 +89,57 @@ class CataAprobacionDialog extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header();
+  const _Header({required this.codigoMuestra, this.identidad});
+
+  final String codigoMuestra;
+  final String? identidad;
 
   @override
   Widget build(BuildContext context) {
+    final id = identidad?.trim();
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: CataV2Theme.cabecera,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
       ),
-      child: Text(
-        'APROBACIÓN DE CATA',
-        textAlign: TextAlign.center,
-        style: VirtusTextStyles.plain(
-          fontSize: 18,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0.5,
-        ),
+      child: Column(
+        children: [
+          Text(
+            'APROBACIÓN DE CATA',
+            textAlign: TextAlign.center,
+            style: VirtusTextStyles.plain(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.5,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Muestra $codigoMuestra',
+            textAlign: TextAlign.center,
+            style: VirtusTextStyles.plain(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Colors.white.withValues(alpha: 0.9),
+            ),
+          ),
+          if (id != null && id.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              id,
+              textAlign: TextAlign.center,
+              style: VirtusTextStyles.plain(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.2,
+                color: Colors.white.withValues(alpha: 0.72),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -322,13 +358,17 @@ class _TablaCatadores extends StatelessWidget {
                             Expanded(
                               flex: 2,
                               child: Center(
-                                child: c.recibida
+                                child: c.enviadaOficial
                                     ? _EstadoRecibidoBadge(
                                         label: c.estadoLabel,
                                       )
-                                    : _EstadoPendienteBadge(
-                                        label: c.estadoLabel,
-                                      ),
+                                    : c.recibida
+                                        ? _EstadoRevisionBadge(
+                                            label: c.estadoLabel,
+                                          )
+                                        : _EstadoPendienteBadge(
+                                            label: c.estadoLabel,
+                                          ),
                               ),
                             ),
                             _td(
@@ -517,6 +557,39 @@ class _EstadoRecibidoBadge extends StatelessWidget {
   }
 }
 
+class _EstadoRevisionBadge extends StatelessWidget {
+  const _EstadoRevisionBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFFB300)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.circle, size: 8, color: Color(0xFFF9A825)),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: VirtusTextStyles.plain(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFFF57F17),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _EstadoPendienteBadge extends StatefulWidget {
   const _EstadoPendienteBadge({required this.label});
 
@@ -649,9 +722,9 @@ class _PanelLateral extends StatelessWidget {
               Text(
                 resumen.codigoMuestra,
                 style: VirtusTextStyles.plain(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.grey.shade600,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.black,
                 ),
               ),
             ],
@@ -675,18 +748,27 @@ class _PanelLateral extends StatelessWidget {
                 Text(
                   resumen.promedioLabel,
                   style: VirtusTextStyles.plain(
-                    fontSize: 56,
+                    fontSize: 48,
                     fontWeight: FontWeight.w900,
                     color: CataColors.acento,
                     height: 1,
                     letterSpacing: -1.2,
                   ),
                 ),
+                const SizedBox(height: 6),
+                Text(
+                  '${resumen.puntuacionesRecibidas} de ${resumen.totalCatadores} puntuaciones',
+                  style: VirtusTextStyles.plain(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Expanded(
                   child: Center(
                     child: hayPremio
-                        ? CataMedallaWidget(variante: visual, size: 88)
+                        ? CataMedallaWidget(variante: visual, size: 72)
                         : Text(
                             media == null ? '—' : 'SIN MEDALLA',
                             style: VirtusTextStyles.plain(
@@ -696,13 +778,6 @@ class _PanelLateral extends StatelessWidget {
                               letterSpacing: 0.4,
                             ),
                           ),
-                  ),
-                ),
-                Text(
-                  '${resumen.puntuacionesRecibidas} de ${resumen.totalCatadores} puntuaciones',
-                  style: VirtusTextStyles.plain(
-                    fontSize: 11,
-                    color: Colors.grey.shade600,
                   ),
                 ),
               ],

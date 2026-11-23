@@ -6,9 +6,15 @@ import 'package:virtus2027/features/cata/presentation/v2/cata_v2_theme.dart';
 
 /// Chip Local/Nube con color según si el servidor responde.
 class ServidorEstadoChip extends StatelessWidget {
-  const ServidorEstadoChip({super.key, this.compact = false});
+  const ServidorEstadoChip({
+    super.key,
+    this.compact = false,
+    this.tecnicoMuted = false,
+  });
 
   final bool compact;
+  /// Gris apagado (cabecera V5.1): no compite con Mesa/Muestra.
+  final bool tecnicoMuted;
 
   @override
   Widget build(BuildContext context) {
@@ -26,9 +32,9 @@ class ServidorEstadoChip extends StatelessWidget {
         final icon = !ok
             ? Icons.cloud_off_outlined
             : (esNube ? Icons.cloud_outlined : Icons.wifi);
-        final color = ok
-            ? const Color(0xFF81C784)
-            : const Color(0xFFFF8A80);
+        final color = tecnicoMuted
+            ? Colors.white.withValues(alpha: ok ? 0.62 : 0.45)
+            : (ok ? const Color(0xFF81C784) : const Color(0xFFFF8A80));
 
         return Padding(
           padding: const EdgeInsets.only(right: 2),
@@ -43,14 +49,14 @@ class ServidorEstadoChip extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: compact ? 13 : 14, color: color),
+                Icon(icon, size: tecnicoMuted ? 12 : (compact ? 13 : 14), color: color),
                 const SizedBox(width: 3),
                 Text(
                   label,
                   style: CataV2Theme.text(
                     color: color,
-                    fontSize: compact ? 10 : 11,
-                    fontWeight: FontWeight.w700,
+                    fontSize: tecnicoMuted ? 12 : (compact ? 10 : 11),
+                    fontWeight: tecnicoMuted ? FontWeight.w600 : FontWeight.w700,
                   ),
                 ),
               ],

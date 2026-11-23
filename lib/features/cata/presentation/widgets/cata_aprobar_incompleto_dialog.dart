@@ -27,14 +27,25 @@ class _CataAprobarIncompletoDialogState
     extends State<CataAprobarIncompletoDialog> {
   bool _noVolverAAvisar = false;
 
+  static const _naranja = Color(0xFFE65100);
+  static const _texto = Color(0xFF212121);
+  static const _textoSec = Color(0xFF616161);
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+      contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
       title: Text(
         'Aprobar con los que hay (${widget.recibidas} de ${widget.total})',
         style: VirtusTextStyles.plain(
           fontSize: 17,
           fontWeight: FontWeight.w900,
+          color: _texto,
         ),
       ),
       content: SizedBox(
@@ -48,26 +59,38 @@ class _CataAprobarIncompletoDialogState
               style: VirtusTextStyles.plain(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: Colors.grey.shade700,
+                color: _textoSec,
               ),
             ),
             const SizedBox(height: 8),
-            for (final c in widget.faltan)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  '· ${c.nombre.toUpperCase()}'
-                  '${c.esPresidente ? ' (PRESIDENTE)' : ''}',
-                  style: VirtusTextStyles.plain(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 180),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final c in widget.faltan)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          '· ${c.nombre.toUpperCase()}'
+                          '${c.esPresidente ? ' (PRESIDENTE)' : ''}',
+                          style: VirtusTextStyles.plain(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: _texto,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
+            ),
             const SizedBox(height: 12),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
               dense: true,
+              activeColor: _naranja,
               value: _noVolverAAvisar,
               onChanged: (v) =>
                   setState(() => _noVolverAAvisar = v ?? false),
@@ -77,6 +100,7 @@ class _CataAprobarIncompletoDialogState
                 style: VirtusTextStyles.plain(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
+                  color: _texto,
                 ),
               ),
             ),
@@ -88,7 +112,10 @@ class _CataAprobarIncompletoDialogState
           onPressed: () => Navigator.of(context).pop(false),
           child: Text(
             'Cancelar',
-            style: VirtusTextStyles.plain(fontWeight: FontWeight.w700),
+            style: VirtusTextStyles.plain(
+              fontWeight: FontWeight.w700,
+              color: _textoSec,
+            ),
           ),
         ),
         FilledButton(
@@ -103,7 +130,9 @@ class _CataAprobarIncompletoDialogState
             Navigator.of(context).pop(true);
           },
           style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFFE65100),
+            backgroundColor: _naranja,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           ),
           child: Text(
             'Aprobar con los que hay',
@@ -134,7 +163,7 @@ Future<bool> confirmarAprobarIncompleto({
   final ok = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => CataAprobarIncompletoDialog(
+    builder: (ctx) => CataAprobarIncompletoDialog(
       faltan: faltan,
       recibidas: resumen.puntuacionesRecibidas,
       total: resumen.totalCatadores,

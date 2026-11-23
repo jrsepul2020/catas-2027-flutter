@@ -15,12 +15,15 @@ class EnviarButtonV4 extends StatefulWidget {
     required this.faltanCriterios,
     required this.guardando,
     required this.onEnviar,
+    this.estiloCompactoV51 = false,
   });
 
   final bool fichaCompleta;
   final int faltanCriterios;
   final bool guardando;
   final VoidCallback onEnviar;
+  /// V5.1: sin «¡Pulsa aquí!» y gris incompleto más claro.
+  final bool estiloCompactoV51;
 
   @override
   State<EnviarButtonV4> createState() => _EnviarButtonV4State();
@@ -250,33 +253,38 @@ class _EnviarButtonV4State extends State<EnviarButtonV4>
     }
     if (!completa) {
       final n = widget.faltanCriterios;
+      final texto = n == 1 ? 'Falta 1 criterio' : 'Faltan $n criterios';
       return Text(
-        'Faltan $n criterios',
+        texto,
         textAlign: TextAlign.center,
         maxLines: 1,
         softWrap: false,
         style: CataV2Theme.text(
           fontSize: 13,
           fontWeight: FontWeight.w800,
-          color: const Color(0xFF5F6B5F),
+          color: widget.estiloCompactoV51
+              ? const Color(0xFF8A938A)
+              : const Color(0xFF5F6B5F),
           letterSpacing: 0.1,
         ),
       );
     }
+    final titulo = Text(
+      'ENVIAR PUNTUACIÓN',
+      maxLines: 1,
+      softWrap: false,
+      style: CataV2Theme.text(
+        fontSize: 13,
+        fontWeight: FontWeight.w900,
+        color: Colors.white,
+        letterSpacing: 0.2,
+      ),
+    );
+    if (widget.estiloCompactoV51) return titulo;
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(
-          'ENVIAR PUNTUACIÓN',
-          maxLines: 1,
-          softWrap: false,
-          style: CataV2Theme.text(
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-            color: Colors.white,
-            letterSpacing: 0.2,
-          ),
-        ),
+        titulo,
         const SizedBox(height: 2),
         Text(
           '¡Pulsa aquí!',

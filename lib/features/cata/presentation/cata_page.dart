@@ -8,13 +8,13 @@ import 'package:virtus2027/core/models/categoria.dart';
 import 'package:virtus2027/core/models/tanda.dart';
 import 'package:virtus2027/features/cata/data/cata_page_realtime_sync.dart';
 import 'package:virtus2027/features/cata/data/cata_repository.dart';
+import 'package:virtus2027/features/cata/domain/cata_salida_remota.dart';
 import 'package:virtus2027/features/cata/domain/ficha_definicion.dart';
 import 'package:virtus2027/config/app_mode.dart';
 import 'package:virtus2027/core/services/app_wakelock.dart';
 import 'package:virtus2027/core/services/realtime_reconnect_bus.dart';
 import 'package:virtus2027/features/cata/presentation/widgets/cata_aprobacion_modal.dart';
 import 'package:virtus2027/features/cata/presentation/widgets/cata_espera_aprobacion_dialog.dart';
-import 'package:virtus2027/features/cata/presentation/widgets/cata_incidencia_dialog.dart';
 import 'package:virtus2027/features/cata/presentation/utils/cata_grupo_style.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:virtus2027/features/cata/presentation/v2/cata_form_v2.dart';
@@ -23,6 +23,9 @@ import 'package:virtus2027/features/cata/presentation/v2/cata_v2_theme.dart';
 import 'package:virtus2027/features/cata/presentation/v3/cata_form_v3.dart';
 import 'package:virtus2027/features/cata/presentation/v3/ficha_version_toggle.dart';
 import 'package:virtus2027/features/cata/presentation/v4/cata_form_v4.dart';
+import 'package:virtus2027/features/cata/presentation/v5/cata_form_v5.dart';
+import 'package:virtus2027/features/cata/presentation/v5/cata_v5_theme.dart';
+import 'package:virtus2027/features/cata/presentation/v5_1/cata_form_v51.dart';
 import 'package:virtus2027/features/dashboard/domain/muestra_en_tanda.dart';
 import 'package:virtus2027/features/home/data/dispositivos_repository.dart';
 import 'package:virtus2027/features/pruebas/presentation/trucos_panel.dart';
@@ -94,14 +97,23 @@ class _CataPageState extends State<CataPage> {
   String? _bannerEnvio;
   String? _error;
   CataPageRealtimeSync? _realtimeSalida;
-  /// UI de ficha. En concurso siempre V4; V2/V3 solo con [esModoPruebas].
+  /// Evita que Realtime expulse al aprobar/salir nosotros mismos.
+  bool _salidaLocalEnCurso = false;
+  /// Evita reabrir el modal de envío en cada reconnect/refresh.
+  bool _modalEnvioVisible = false;
+  /// UI de ficha. En concurso siempre V4; V2/V3/V5 solo con [esModoPruebas].
   FichaUiVersion _fichaUi = FichaUiVersion.v4;
   static const _prefsFichaUi = 'ficha_ui_version';
+  static const _prefsEstiloBotonesV5 = 'ficha_v5_estilo_botones';
+  CataBotonesEstiloV5 _estiloBotonesV5 = CataBotonesEstiloV5.pastel;
 
   bool get _permiteFichaV3 => categoriaPermiteFichaV3(
         nombre: widget.categoria.nombre,
         codigo: widget.categoria.codigo,
       );
+
+  /// V5 solo vinos (mismo criterio que V3).
+  bool get _permiteFichaV5 => _permiteFichaV3;
 
   @override
   void initState() {
@@ -116,31 +128,49 @@ class _CataPageState extends State<CataPage> {
     if (esModoPruebas) unawaited(_cargarPreferenciaFichaUi());
     // Sin valores por defecto: total empieza en 0 y suma al marcar.
     _cargarPuntuacion();
-    if (!widget.esPresidente) {
-      _realtimeSalida = CataPageRealtimeSync(
-        tandaId: widget.tanda.id,
-        muestraId: widget.muestra.muestraId,
-        catadorId: widget.catador.id,
-        onForzarSalida: _forzarSalidaAlDashboard,
-      );
-      _realtimeSalida!.subscribe();
-    }
+    // Presidente y catador: Gestión (App2) manda y puede expulsar de la ficha.
+    _realtimeSalida = CataPageRealtimeSync(
+      tandaId: widget.tanda.id,
+      muestraId: widget.muestra.muestraId,
+      catadorId: widget.catador.id,
+      codigoMuestra: widget.muestra.codigoDisplay,
+      onForzarSalida: _forzarSalidaAlDashboard,
+    );
+    _realtimeSalida!.subscribe();
   }
 
   Future<void> _cargarPreferenciaFichaUi() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_prefsFichaUi);
-      if (!mounted || raw == null) return;
-      final parsed = switch (raw) {
-        'v2' => FichaUiVersion.v2,
-        'v3' => FichaUiVersion.v3,
-        'v4' => FichaUiVersion.v4,
-        _ => null,
-      };
-      if (parsed == null) return;
-      if (parsed == FichaUiVersion.v3 && !_permiteFichaV3) return;
-      setState(() => _fichaUi = parsed);
+      final estiloRaw = prefs.getString(_prefsEstiloBotonesV5);
+      if (!mounted) return;
+      CataBotonesEstiloV5? estilo;
+      if (estiloRaw == 'contorno') {
+        estilo = CataBotonesEstiloV5.contorno;
+      } else if (estiloRaw == 'pastel') {
+        estilo = CataBotonesEstiloV5.pastel;
+      }
+      FichaUiVersion? parsed;
+      if (raw != null) {
+        parsed = switch (raw) {
+          'v2' => FichaUiVersion.v2,
+          'v3' => FichaUiVersion.v3,
+          'v4' => FichaUiVersion.v4,
+          'v5' => FichaUiVersion.v5,
+          'v51' => FichaUiVersion.v51,
+          _ => null,
+        };
+      }
+      if (parsed == FichaUiVersion.v3 && !_permiteFichaV3) parsed = null;
+      if ((parsed == FichaUiVersion.v5 || parsed == FichaUiVersion.v51) &&
+          !_permiteFichaV5) {
+        parsed = null;
+      }
+      setState(() {
+        if (parsed != null) _fichaUi = parsed;
+        if (estilo != null) _estiloBotonesV5 = estilo;
+      });
     } catch (_) {}
   }
 
@@ -154,7 +184,20 @@ class _CataPageState extends State<CataPage> {
           FichaUiVersion.v2 => 'v2',
           FichaUiVersion.v3 => 'v3',
           FichaUiVersion.v4 => 'v4',
+          FichaUiVersion.v5 => 'v5',
+          FichaUiVersion.v51 => 'v51',
         },
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _setEstiloBotonesV5(CataBotonesEstiloV5 value) async {
+    setState(() => _estiloBotonesV5 = value);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _prefsEstiloBotonesV5,
+        value == CataBotonesEstiloV5.contorno ? 'contorno' : 'pastel',
       );
     } catch (_) {}
   }
@@ -173,16 +216,16 @@ class _CataPageState extends State<CataPage> {
     unawaited(_cargarPuntuacion());
   }
 
-  /// Cierra diálogos (p. ej. «Revisar mi puntuación») y vuelve al dashboard.
-  /// Se dispara al aprobar o al cambiar el presidente de muestra.
-  void _forzarSalidaAlDashboard() {
+  /// Cierra diálogos y vuelve al dashboard (aprobación remota o orden de Gestión).
+  void _forzarSalidaAlDashboard(CataSalidaRemota info) {
+    if (_salidaLocalEnCurso) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _cerrarOverlaysYSalir();
+      _cerrarOverlaysYSalir(info);
     });
   }
 
-  void _cerrarOverlaysYSalir() {
-    if (!mounted || widget.esPresidente) return;
+  void _cerrarOverlaysYSalir(CataSalidaRemota info) {
+    if (!mounted || _salidaLocalEnCurso) return;
     final nav = Navigator.of(context);
     // Cierra diálogos encima (espera aprobación, etc.) y luego la ficha.
     var guard = 0;
@@ -197,7 +240,7 @@ class _CataPageState extends State<CataPage> {
     }
     if (!mounted) return;
     if (nav.canPop()) {
-      nav.pop(widget.muestra.orden);
+      nav.pop(info);
     }
   }
 
@@ -256,6 +299,7 @@ class _CataPageState extends State<CataPage> {
 
   Future<void> _ejecutarAprobacion(BuildContext dialogContext) async {
     try {
+      _salidaLocalEnCurso = true;
       await _repository.aprobarMuestra(
         tandaId: widget.tanda.id,
         muestraId: widget.muestra.muestraId,
@@ -265,6 +309,7 @@ class _CataPageState extends State<CataPage> {
       if (!mounted) return;
       Navigator.of(context).pop(widget.muestra.orden);
     } catch (e) {
+      _salidaLocalEnCurso = false;
       if (!dialogContext.mounted) return;
       ScaffoldMessenger.of(dialogContext).showSnackBar(
         SnackBar(content: Text(_formatError(e))),
@@ -274,6 +319,13 @@ class _CataPageState extends State<CataPage> {
 
   Future<void> _cargarPuntuacion() async {
     try {
+      // Solo este catador: `aprobada` → `borrador`. No tocar `enviada` ajenas.
+      await _repository.asegurarNotasEditablesSiAbierta(
+        tandaId: widget.tanda.id,
+        muestraId: widget.muestra.muestraId,
+        catadorId: widget.catador.id,
+      );
+
       var guardada = await _repository.getPuntuacion(
         catadorId: widget.catador.id,
         muestraId: widget.muestra.muestraId,
@@ -287,6 +339,7 @@ class _CataPageState extends State<CataPage> {
         final ok = await _repository.desbloquearPuntuacionesSiRecata(
           tandaId: widget.tanda.id,
           muestraId: widget.muestra.muestraId,
+          catadorId: widget.catador.id,
         );
         if (ok) {
           guardada = await _repository.getPuntuacion(
@@ -376,6 +429,24 @@ class _CataPageState extends State<CataPage> {
     final rol = widget.catador.rol?.trim();
     if (rol != null && rol.isNotEmpty) return rol;
     return 'Catador';
+  }
+
+  /// Pie discreto para constancia admin en modales de envío.
+  String get _identidadEnvio {
+    final parts = <String>[];
+    final nombre = widget.catador.nombre.trim();
+    if (nombre.isNotEmpty) parts.add(nombre);
+    parts.add(_rolDisplay);
+    if (widget.tabletNumero != null) {
+      parts.add('Tablet ${widget.tabletNumero}');
+    }
+    if (widget.tandaNumero != null) {
+      parts.add('Tanda ${widget.tandaNumero}');
+    } else {
+      final tandaNombre = widget.tanda.nombre.trim();
+      if (tandaNombre.isNotEmpty) parts.add(tandaNombre);
+    }
+    return parts.join(' · ');
   }
 
   bool get _formularioEditable => !_soloLectura && !_puntuacionEnviada;
@@ -547,11 +618,17 @@ class _CataPageState extends State<CataPage> {
       if (!mounted) return;
       if (_esErrorMuestraCerrada(e)) {
         _pararReintentoEnvio();
+        final sigueAbierta = await _muestraSigueActiva();
+        if (!mounted) return;
         setState(() {
           _guardando = false;
-          _bannerEnvio = widget.esPresidente
-              ? 'La muestra ya fue cerrada'
-              : 'La muestra ya está cerrada por el presidente';
+          _bannerEnvio = sigueAbierta
+              ? 'No se pudo guardar: la BD bloquea notas aprobadas. '
+                  'Aplica en Supabase la migración proteger_puntuacion '
+                  'o pide al admin reabrir la muestra.'
+              : (widget.esPresidente
+                  ? 'La muestra ya fue cerrada'
+                  : 'La muestra ya está cerrada por el presidente');
         });
         return;
       }
@@ -572,37 +649,11 @@ class _CataPageState extends State<CataPage> {
     _retryEnvioTimer = null;
   }
 
-  Future<void> _onDescartarIncidencia() async {
-    if (!widget.esPresidente || _guardando) return;
-    final motivo = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => CataIncidenciaDialog(
-        codigoMuestra: widget.muestra.codigoDisplay,
-      ),
-    );
-    if (motivo == null || !mounted) return;
-
-    setState(() => _guardando = true);
-    try {
-      await _repository.marcarIncidencia(
-        tandaId: widget.tanda.id,
-        muestraId: widget.muestra.muestraId,
-        motivo: motivo,
-      );
-      if (!mounted) return;
-      Navigator.of(context).pop(widget.muestra.orden);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_formatError(e))),
-      );
-    } finally {
-      if (mounted) setState(() => _guardando = false);
-    }
-  }
 
   Future<void> _mostrarModalCatador() async {
+    if (_modalEnvioVisible) return;
+    _modalEnvioVisible = true;
+    try {
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -613,23 +664,32 @@ class _CataPageState extends State<CataPage> {
         codigoMuestra: widget.muestra.codigoDisplay,
         muestraOrden: widget.muestra.orden,
         tandaMuestrasTotal: widget.tandaMuestrasTotal,
+        identidad: _identidadEnvio,
+        umbrales: _umbralesMedalla,
         onRevisar: () {
           Navigator.of(context).pop();
           _habilitarRevision();
         },
       ),
     );
+    } finally {
+      _modalEnvioVisible = false;
+    }
   }
 
   Future<void> _mostrarModalPresidente() async {
+    if (_modalEnvioVisible) return;
+    _modalEnvioVisible = true;
     final mesaId = widget.mesaId ?? widget.catador.mesaId;
     if (mesaId == null || mesaId.isEmpty) {
+      _modalEnvioVisible = false;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No se pudo cargar la mesa de cata.')),
       );
       return;
     }
 
+    try {
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -641,6 +701,7 @@ class _CataPageState extends State<CataPage> {
           codigoMuestra: widget.muestra.codigoDisplay,
           repository: _repository,
           concursoId: widget.concursoId ?? '',
+          identidad: _identidadEnvio,
           onVolver: () => Navigator.of(dialogContext).pop(),
           onRevisar: () {
             Navigator.of(dialogContext).pop();
@@ -650,6 +711,9 @@ class _CataPageState extends State<CataPage> {
         );
       },
     );
+    } finally {
+      _modalEnvioVisible = false;
+    }
   }
 
   String _formatError(Object error) {
@@ -668,7 +732,10 @@ class _CataPageState extends State<CataPage> {
             concursoNombre: widget.concursoNombre ?? widget.categoria.nombre,
             mostrarModoPruebas: esModoPruebas && widget.esPresidente,
             onBack: widget.esPresidente
-                ? () => Navigator.of(context).pop()
+                ? () {
+                    _salidaLocalEnCurso = true;
+                    Navigator.of(context).pop();
+                  }
                 : null,
             onRefresh: _cargarPuntuacion,
             onTrucos:
@@ -681,6 +748,17 @@ class _CataPageState extends State<CataPage> {
             tabletNumero: widget.tabletNumero,
             catadorNombre: widget.catador.nombre,
             paisCodigo: widget.paisCodigo ?? widget.catador.pais,
+            codigoMuestra: () {
+              final v = esModoPruebas ? _fichaUi : FichaUiVersion.v4;
+              return (v == FichaUiVersion.v5 || v == FichaUiVersion.v51)
+                  ? widget.muestra.codigoDisplay
+                  : null;
+            }(),
+            extrasSoloPruebas: () {
+              final v = esModoPruebas ? _fichaUi : FichaUiVersion.v4;
+              return v == FichaUiVersion.v5 || v == FichaUiVersion.v51;
+            }(),
+            esModoPruebasApp: esModoPruebas,
           ),
           Expanded(child: _buildBody()),
         ],
@@ -732,19 +810,63 @@ class _CataPageState extends State<CataPage> {
     final unico = _criterioUnicoPendiente;
     final criteriosCompletos =
         _ficha.todosLosCriterios.length - _faltanCriterios;
-    final versionActiva =
-        esModoPruebas ? _fichaUi : FichaUiVersion.v4;
+    var versionActiva = esModoPruebas ? _fichaUi : FichaUiVersion.v4;
+    if (versionActiva == FichaUiVersion.v3 && !_permiteFichaV3) {
+      versionActiva = FichaUiVersion.v4;
+    }
+    if ((versionActiva == FichaUiVersion.v5 ||
+            versionActiva == FichaUiVersion.v51) &&
+        !_permiteFichaV5) {
+      versionActiva = FichaUiVersion.v4;
+    }
     final selector = esModoPruebas
         ? FichaVersionToggle(
-            version: versionActiva == FichaUiVersion.v3 && !_permiteFichaV3
-                ? FichaUiVersion.v4
-                : versionActiva,
+            version: versionActiva,
             permiteV3: _permiteFichaV3,
+            permiteV5: _permiteFichaV5,
             onChanged: (v) => unawaited(_setFichaUi(v)),
           )
         : null;
 
     final Widget form = switch (versionActiva) {
+      FichaUiVersion.v51 when _permiteFichaV5 => CataFormV51(
+          ficha: _ficha,
+          scores: _scores,
+          readOnly: !_formularioEditable,
+          onScoreChanged: _onScoreChanged,
+          totalActual: _totalActual,
+          umbrales: _umbralesMedalla,
+          criteriosCompletos: criteriosCompletos,
+          categoriaNombre: widget.categoria.nombre,
+          guardando: _guardando,
+          fichaCompleta: _todosCompletos,
+          criteriosResaltados: _criteriosResaltados,
+          onEnviar: _onEnviar,
+          onReiniciar: _formularioEditable ? _confirmarReiniciar : null,
+          bannerEnvio: _bannerEnvio,
+          selectorVersion: selector,
+        ),
+      FichaUiVersion.v5 when _permiteFichaV5 => CataFormV5(
+          ficha: _ficha,
+          scores: _scores,
+          readOnly: !_formularioEditable,
+          onScoreChanged: _onScoreChanged,
+          totalActual: _totalActual,
+          umbrales: _umbralesMedalla,
+          criteriosCompletos: criteriosCompletos,
+          categoriaNombre: widget.categoria.nombre,
+          guardando: _guardando,
+          fichaCompleta: _todosCompletos,
+          criteriosResaltados: _criteriosResaltados,
+          onEnviar: _onEnviar,
+          onReiniciar: _formularioEditable ? _confirmarReiniciar : null,
+          bannerEnvio: _bannerEnvio,
+          selectorVersion: selector,
+          estiloBotones: _estiloBotonesV5,
+          onEstiloBotonesChanged: esModoPruebas
+              ? (e) => unawaited(_setEstiloBotonesV5(e))
+              : null,
+        ),
       FichaUiVersion.v3 when _permiteFichaV3 => CataFormV3(
           ficha: _ficha,
           scores: _scores,
@@ -763,8 +885,6 @@ class _CataPageState extends State<CataPage> {
           nombreCriterioUnicoPendiente: unico?.label,
           onEnviar: _onEnviar,
           onReiniciar: _formularioEditable ? _confirmarReiniciar : null,
-          onDescartar:
-              widget.esPresidente ? _onDescartarIncidencia : null,
           bannerEnvio: _bannerEnvio,
           selectorVersion: selector,
         ),
@@ -786,8 +906,6 @@ class _CataPageState extends State<CataPage> {
           nombreCriterioUnicoPendiente: unico?.label,
           onEnviar: _onEnviar,
           onReiniciar: _formularioEditable ? _confirmarReiniciar : null,
-          onDescartar:
-              widget.esPresidente ? _onDescartarIncidencia : null,
           bannerEnvio: _bannerEnvio,
           selectorVersion: selector,
         ),
@@ -806,8 +924,6 @@ class _CataPageState extends State<CataPage> {
           criteriosResaltados: _criteriosResaltados,
           onEnviar: _onEnviar,
           onReiniciar: _formularioEditable ? _confirmarReiniciar : null,
-          onIncidencia:
-              widget.esPresidente ? _onDescartarIncidencia : null,
           bannerEnvio: _bannerEnvio,
           selectorVersion: selector,
         ),

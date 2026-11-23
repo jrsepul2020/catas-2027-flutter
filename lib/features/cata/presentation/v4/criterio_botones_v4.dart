@@ -128,35 +128,41 @@ class _BotonNivel extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(CataV4Theme.radioBoton),
-        child: AnimatedContainer(
-          duration: CataV2Theme.animSeleccion,
-          curve: Curves.easeOut,
-          height: height,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(CataV4Theme.radioBoton),
-            border: Border.all(
-              color: borderColor,
-              width: CataV4Theme.bordeBoton,
-            ),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: CataV4Theme.oscuro(columna).withValues(alpha: 0.32),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1),
-                    ),
-                  ]
-                : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: CataV4Theme.insetBotonHorizontal,
           ),
-          child: Text(
-            '$valor',
-            style: CataV2Theme.text(
-              fontSize: CataV4Theme.tamanoNumero,
-              fontWeight: FontWeight.w800,
-              color: fg,
-              height: 1,
+          child: AnimatedContainer(
+            duration: CataV2Theme.animSeleccion,
+            curve: Curves.easeOut,
+            height: height,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(CataV4Theme.radioBoton),
+              border: Border.all(
+                color: borderColor,
+                width: CataV4Theme.bordeBoton,
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color:
+                            CataV4Theme.oscuro(columna).withValues(alpha: 0.32),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Text(
+              '$valor',
+              style: CataV2Theme.text(
+                fontSize: CataV4Theme.tamanoNumero,
+                fontWeight: FontWeight.w700,
+                color: fg,
+                height: 1,
+              ),
             ),
           ),
         ),

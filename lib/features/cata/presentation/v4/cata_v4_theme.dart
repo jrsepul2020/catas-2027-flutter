@@ -5,7 +5,7 @@ import 'package:virtus2027/features/cata/presentation/v2/cata_v2_theme.dart';
 abstract final class CataV4Theme {
   static const int columnas = 5;
   static const double alturaBotonMin = 46;
-  static const double huecoBotones = 6;
+  static const double huecoBotones = 5;
   static const double radioBoton = 10;
   static const double radioTarjeta = 10;
   /// Ancho columna panel (incluye margen exterior 12 del resumen).
@@ -14,10 +14,12 @@ abstract final class CataV4Theme {
   static const double anchoEtiqueta = 135;
   static const double anchoBanda = 22;
   static const double bordeBoton = 1.5;
-  /// Números de los botones de puntuación (más legibles tras quitar el toggle).
-  static const double tamanoNumero = 26;
+  /// Números de los botones de puntuación (−2 px; peso 700 en el botón).
+  static const double tamanoNumero = 24;
   /// Hueco entre etiqueta de criterio y columnas de puntos.
   static const double huecoEtiquetaPuntos = 10;
+  /// Inset horizontal extra para botones algo menos anchos (−5 px total).
+  static const double insetBotonHorizontal = 2.5;
 
   static const Color fondo = Color(0xFFF0F3F6);
   static const Color tarjeta = Colors.white;
