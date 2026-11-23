@@ -58,8 +58,15 @@ class MuestrasList extends StatelessWidget {
                   child: _ColHeader('#', center: true, soft: true),
                 ),
                 Expanded(child: _ColHeader('CÓDIGO · CATEGORÍA')),
-                SizedBox(width: 76, child: _ColHeader('MEDALLA', center: true)),
-                SizedBox(width: 40, child: _ColHeader('PTS', center: true)),
+                SizedBox(width: 70, child: _ColHeader('MEDALLA', center: true)),
+                SizedBox(
+                  width: 52,
+                  child: _ColHeader('MIS PTS', center: true),
+                ),
+                SizedBox(
+                  width: 52,
+                  child: _ColHeader('MEDIA', center: true),
+                ),
                 SizedBox(width: 54, child: _ColHeader('ESTADO', center: true)),
               ],
             ),
@@ -192,11 +199,23 @@ class _MuestraListRow extends StatelessWidget {
                       ),
                     ),
                     SizedBox(
-                      width: 76,
+                      width: 70,
                       child: Center(child: _MedallaChip(medalla: medalla)),
                     ),
                     SizedBox(
-                      width: 40,
+                      width: 52,
+                      child: Text(
+                        muestra.puntuacionCatadorLabel,
+                        style: CataV2Theme.text(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 52,
                       child: Text(
                         muestra.puntuacionMediaLabel,
                         style: CataV2Theme.text(

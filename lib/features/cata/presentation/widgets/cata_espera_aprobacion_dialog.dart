@@ -3,6 +3,7 @@ import 'package:virtus2027/core/theme/virtus_colors.dart';
 import 'package:virtus2027/core/theme/virtus_text_styles.dart';
 import 'package:virtus2027/features/cata/domain/ficha_definicion.dart';
 import 'package:virtus2027/features/cata/presentation/utils/cata_colors.dart';
+import 'package:virtus2027/features/cata/presentation/utils/cata_grupo_style.dart';
 
 class CataEsperaAprobacionDialog extends StatelessWidget {
   const CataEsperaAprobacionDialog({
@@ -14,6 +15,8 @@ class CataEsperaAprobacionDialog extends StatelessWidget {
     required this.onRevisar,
     this.muestraOrden,
     this.tandaMuestrasTotal,
+    this.identidad,
+    this.umbrales = MedallaUmbrales.defecto,
   });
 
   final FichaDefinicion ficha;
@@ -23,6 +26,9 @@ class CataEsperaAprobacionDialog extends StatelessWidget {
   final VoidCallback onRevisar;
   final int? muestraOrden;
   final int? tandaMuestrasTotal;
+  /// Nombre · rol · tablet · tanda (constancia admin).
+  final String? identidad;
+  final MedallaUmbrales umbrales;
 
   static const _texto = Color(0xFF1B2B22);
   static const _textoMuted = Color(0xFF6B7C72);
@@ -83,12 +89,28 @@ class CataEsperaAprobacionDialog extends StatelessWidget {
                           codigoMuestra: codigoMuestra,
                           muestraOrden: muestraOrden,
                           tandaMuestrasTotal: tandaMuestrasTotal,
+                          total: total,
+                          umbrales: umbrales,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
+                if (identidad != null && identidad!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    identidad!.trim(),
+                    textAlign: TextAlign.center,
+                    style: VirtusTextStyles.plain(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: _textoMuted,
+                      letterSpacing: 0.15,
+                      fontFamily: 'Inter',
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
                 SizedBox(
                   height: 64,
                   width: double.infinity,
@@ -334,12 +356,16 @@ class _PuntosPanel extends StatelessWidget {
   const _PuntosPanel({
     required this.puntosTexto,
     required this.codigoMuestra,
+    required this.total,
+    required this.umbrales,
     this.muestraOrden,
     this.tandaMuestrasTotal,
   });
 
   final String puntosTexto;
   final String codigoMuestra;
+  final double total;
+  final MedallaUmbrales umbrales;
   final int? muestraOrden;
   final int? tandaMuestrasTotal;
 
@@ -365,6 +391,7 @@ class _PuntosPanel extends StatelessWidget {
         muestraOrden != null &&
         tandaMuestrasTotal != null &&
         tandaMuestrasTotal! > 0;
+    final medalla = CataMedalla.evaluar(total: total, umbrales: umbrales);
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -400,6 +427,7 @@ class _PuntosPanel extends StatelessWidget {
               ),
             ),
             Expanded(
+              flex: 2,
               child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -417,6 +445,29 @@ class _PuntosPanel extends StatelessWidget {
                           height: 1,
                           fontFamily: 'Inter',
                         ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('MEDALLA', style: _tituloStyle),
+                    const SizedBox(height: 4),
+                    Text(
+                      medalla.label,
+                      textAlign: TextAlign.center,
+                      style: VirtusTextStyles.plain(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: medalla.color,
+                        height: 1.05,
+                        fontFamily: 'Inter',
+                        letterSpacing: 0.4,
                       ),
                     ),
                   ],

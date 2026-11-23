@@ -23,7 +23,8 @@ class MuestrasPendientesList extends StatelessWidget {
 
   static const Color _verdeCabecera = Color(0xFF2D6A4F);
   static const Color _verdeFondo = Color(0xFFE8F5E9);
-  static const int filasMinimasVisibles = 24;
+  /// Filas visibles mínimas: menos = filas más altas (dedo).
+  static const int filasMinimasVisibles = 10;
 
   @override
   Widget build(BuildContext context) {
@@ -98,11 +99,11 @@ class MuestrasPendientesList extends StatelessWidget {
                     builder: (context, constraints) {
                       final extent =
                           (constraints.maxHeight / filasMinimasVisibles)
-                              .clamp(15.0, 20.0);
+                              .clamp(40.0, 52.0);
                       return ListView.builder(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 2,
+                          horizontal: 6,
+                          vertical: 4,
                         ),
                         itemExtent: extent,
                         itemCount: muestras.length,
@@ -163,18 +164,18 @@ class _PendienteRow extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(4),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Row(
             children: [
               Text(
                 '#${muestra.orden}',
                 style: CataV2Theme.text(
                   color: MuestrasPendientesList._verdeCabecera,
-                  fontSize: 11,
+                  fontSize: 15,
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text.rich(
                   TextSpan(
@@ -182,8 +183,8 @@ class _PendienteRow extends StatelessWidget {
                       TextSpan(
                         text: muestra.codigoDisplay,
                         style: CataV2Theme.text(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
                           color: CataV2Theme.texto,
                         ),
                       ),
@@ -191,8 +192,8 @@ class _PendienteRow extends StatelessWidget {
                         TextSpan(
                           text: '  ·  $categoria',
                           style: CataV2Theme.text(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
                             color: CataV2Theme.textoSecundario,
                           ),
                         ),
@@ -204,20 +205,20 @@ class _PendienteRow extends StatelessWidget {
               ),
               if (etiqueta != null)
                 Container(
-                  margin: const EdgeInsets.only(left: 4),
+                  margin: const EdgeInsets.only(left: 6),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 1,
+                    horizontal: 8,
+                    vertical: 4,
                   ),
                   decoration: BoxDecoration(
                     color: MuestrasPendientesList._verdeCabecera
                         .withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
                     etiqueta!,
                     style: CataV2Theme.text(
-                      fontSize: 9,
+                      fontSize: 11,
                       fontWeight: FontWeight.w800,
                       color: MuestrasPendientesList._verdeCabecera,
                     ),

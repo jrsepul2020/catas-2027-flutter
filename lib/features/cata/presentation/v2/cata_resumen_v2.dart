@@ -265,14 +265,6 @@ class CataResumenV2 extends StatelessWidget {
                       onPressed: onReiniciar,
                     ),
                   ],
-                  if (onDescartar != null) ...[
-                    const SizedBox(height: 6),
-                    _SecondaryButton(
-                      label: 'DESCARTAR',
-                      icon: Icons.close,
-                      onPressed: onDescartar,
-                    ),
-                  ],
                 ],
               ),
             ),

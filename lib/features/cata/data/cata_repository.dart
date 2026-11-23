@@ -66,6 +66,7 @@ class CataRepository {
           await desbloquearPuntuacionesSiRecata(
             tandaId: tandaId,
             muestraId: muestraId,
+            catadorId: catadorId,
           );
           existing = await getPuntuacion(
             catadorId: catadorId,
@@ -98,20 +99,14 @@ class CataRepository {
         final tandaDbId = _toDbId(tandaId);
         final muestraDbId = _toDbId(muestraId);
 
-        // Antes de `activa`: tras recata admin las notas están en `enviada`
-        // (o `aprobada`). Pasar a `borrador` conservando scores evita que el
-        // catador, al entrar por Realtime, vea la ficha como ya enviada.
-        // `enviada`→`borrador` no lo bloquea el candado; `aprobada` solo si
-        // la muestra ya no está completada (p. ej. tras `reabrir_muestra`).
-        try {
-          await _client
-              .from('puntuaciones')
-              .update({'estado': 'borrador'})
-              .eq('tanda_id', tandaDbId)
-              .eq('muestra_id', muestraDbId)
-              .inFilter('estado', ['aprobada', 'enviada']);
-        } catch (_) {}
+        final estadoPrevio = await getEstadoMuestra(
+          tandaId: tandaId,
+          muestraId: muestraId,
+        );
+        final yaEnCurso = estadoPrevio == 'activa' || estadoPrevio == 'en_curso';
 
+        // 1) Activar primero: el candado de `aprobada` solo cede si la muestra
+        //    ya no está completada. Desbloquear ANTES fallaba en silencio.
         await _client
             .from('tanda_muestras')
             .update({'estado': 'pendiente'})
@@ -123,8 +118,72 @@ class CataRepository {
             .update({'estado': 'activa'})
             .eq('tanda_id', tandaDbId)
             .eq('muestra_id', muestraDbId);
+
+        // 2) Solo al ABRIR de verdad (no si ya estaba en curso): desbloquear
+        //    notas de recata. Si ya hay envíos frescos, no tocarlos.
+        if (!yaEnCurso) {
+          await _desbloquearNotasTrasAbrir(
+            tandaDbId: tandaDbId,
+            muestraDbId: muestraDbId,
+          );
+        }
       },
     );
+  }
+
+  /// Solo la nota del [catadorId] si sigue `aprobada`.
+  /// No escribe nada si ya es `enviada`/`borrador` (evita eventos Realtime basura).
+  Future<void> asegurarNotasEditablesSiAbierta({
+    required String tandaId,
+    required String muestraId,
+    required String catadorId,
+  }) async {
+    final estado = await getEstadoMuestra(
+      tandaId: tandaId,
+      muestraId: muestraId,
+    );
+    if (estado != 'activa' &&
+        estado != 'en_curso' &&
+        estado != 'pendiente') {
+      return;
+    }
+    final actual = await getPuntuacion(
+      catadorId: catadorId,
+      muestraId: muestraId,
+      tandaId: tandaId,
+    );
+    if (actual == null || actual.estado.toLowerCase() != 'aprobada') {
+      return;
+    }
+    try {
+      await _client
+          .from('puntuaciones')
+          .update({'estado': 'borrador'})
+          .eq('tanda_id', _toDbId(tandaId))
+          .eq('muestra_id', _toDbId(muestraId))
+          .eq('catador_id', _toDbId(catadorId))
+          .eq('estado', 'aprobada');
+    } catch (_) {
+      // Best-effort.
+    }
+  }
+
+  /// Al ABRIR CATA de mesa: `aprobada`/`enviada` → `borrador` (toda la mesa).
+  /// Solo llamar desde [abrirCataMuestra], nunca al entrar un catador tarde.
+  Future<void> _desbloquearNotasTrasAbrir({
+    required dynamic tandaDbId,
+    required dynamic muestraDbId,
+  }) async {
+    try {
+      await _client
+          .from('puntuaciones')
+          .update({'estado': 'borrador'})
+          .eq('tanda_id', tandaDbId)
+          .eq('muestra_id', muestraDbId)
+          .inFilter('estado', ['aprobada', 'enviada']);
+    } catch (_) {
+      // Best-effort: si el trigger local sigue antiguo, la UI avisará al enviar.
+    }
   }
 
   /// Tras ABRIR CATA en una muestra reabierta: `aprobada`/`enviada` → `borrador`
@@ -169,6 +228,7 @@ class CataRepository {
   Future<bool> desbloquearPuntuacionesSiRecata({
     required String tandaId,
     required String muestraId,
+    String? catadorId,
   }) async {
     final estado = await getEstadoMuestra(
       tandaId: tandaId,
@@ -183,14 +243,22 @@ class CataRepository {
       await Diagnostico.escritura(
         tipo: 'recata_desbloquear',
         tabla: 'puntuaciones',
-        match: {'muestra_id': muestraId, 'tanda_id': tandaId},
+        match: {
+          'muestra_id': muestraId,
+          'tanda_id': tandaId,
+          if (catadorId != null) 'catador_id': catadorId,
+        },
         run: () async {
-          await _client
+          var q = _client
               .from('puntuaciones')
               .update({'estado': 'borrador'})
               .eq('tanda_id', _toDbId(tandaId))
               .eq('muestra_id', _toDbId(muestraId))
               .eq('estado', 'aprobada');
+          if (catadorId != null && catadorId.isNotEmpty) {
+            q = q.eq('catador_id', _toDbId(catadorId));
+          }
+          await q;
         },
       );
       return true;
@@ -281,24 +349,6 @@ class CataRepository {
     );
   }
 
-  /// Marca la muestra como incidencia de mesa (pausa hasta admin).
-  Future<void> marcarIncidencia({
-    required String tandaId,
-    required String muestraId,
-    required String motivo,
-  }) async {
-    await Diagnostico.escritura(
-      tipo: 'incidencia',
-      tabla: 'tanda_muestras',
-      match: {'muestra_id': muestraId, 'tanda_id': tandaId},
-      run: () async {
-        await _client.from('tanda_muestras').update({
-          'estado': 'incidencia',
-          'incidencia_motivo': motivo,
-        }).eq('tanda_id', _toDbId(tandaId)).eq('muestra_id', _toDbId(muestraId));
-      },
-    );
-  }
 
   /// Estado actual de la fila en `tanda_muestras` (una lectura puntual).
   Future<String?> getEstadoMuestra({

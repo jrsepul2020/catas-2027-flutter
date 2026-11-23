@@ -3,22 +3,22 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:virtus2027/config/supabase_config.dart';
+import 'package:virtus2027/features/cata/domain/cata_salida_remota.dart';
 import 'package:virtus2027/features/diagnostico/diagnostico.dart';
 
-/// Expulsa al catador de la ficha cuando ya no debe seguir en esa muestra:
-/// - el presidente aprueba (muestra completada / cualquier puntuación aprobada), o
-/// - el presidente cambia de muestra (la actual deja de estar activa u otra
-///   pasa a activa).
+/// Expulsa de la ficha (presidente o catador) cuando ya no deben seguir:
+/// - la muestra se aprueba / deja de estar activa, o
+/// - Gestión (App2) u otro puesto activa otra muestra.
 ///
-/// Realtime es la vía rápida; el poll de respaldo corre **siempre** mientras la
-/// ficha está abierta (cada [pollInterval]), para no depender solo de Realtime
-/// en el Geekom local.
+/// Realtime es la vía rápida; el poll de respaldo corre mientras la ficha
+/// está abierta (cada [pollInterval]).
 class CataPageRealtimeSync {
   CataPageRealtimeSync({
     required this.tandaId,
     required this.muestraId,
     required this.catadorId,
     required this.onForzarSalida,
+    this.codigoMuestra,
     SupabaseClient? client,
     this.pollInterval = const Duration(seconds: 3),
   }) : _client = client ?? SupabaseConfig.client;
@@ -26,7 +26,8 @@ class CataPageRealtimeSync {
   final String tandaId;
   final String muestraId;
   final String catadorId;
-  final VoidCallback onForzarSalida;
+  final String? codigoMuestra;
+  final ValueChanged<CataSalidaRemota> onForzarSalida;
   final Duration pollInterval;
   final SupabaseClient _client;
 
@@ -54,7 +55,7 @@ class CataPageRealtimeSync {
           ),
           callback: (payload) {
             Diagnostico.ecoPostgres(payload);
-            _onTandaMuestraUpdate(payload.newRecord);
+            unawaited(_onTandaMuestraUpdate(payload.newRecord));
           },
         )
         .onPostgresChanges(
@@ -69,10 +70,16 @@ class CataPageRealtimeSync {
           callback: (payload) {
             Diagnostico.ecoPostgres(payload);
             final record = payload.newRecord;
-            // Cualquier puntuación de ESTA muestra → aprobada = mesa aprobada.
             if (!_esMuestra(record)) return;
             final estado = (record['estado']?.toString() ?? '').toLowerCase();
-            if (estado == 'aprobada') _notificar();
+            if (estado == 'aprobada') {
+              _notificar(
+                CataSalidaRemota(
+                  motivo: CataSalidaMotivo.muestraAprobada,
+                  codigoMuestraActual: codigoMuestra,
+                ),
+              );
+            }
           },
         );
 
@@ -110,42 +117,95 @@ class CataPageRealtimeSync {
       if (row == null) return;
       final estado = (row['estado']?.toString() ?? '').toLowerCase().trim();
       if (estado != 'activa' && estado != 'en_curso') {
-        _notificar();
+        final info = await _clasificarSalida(estadoActual: estado);
+        if (info != null) _notificar(info);
         return;
       }
 
-      // Por si la actual sigue marcada activa y otra también (carrera rara).
-      final activa = await Diagnostico.pollSelect(
-        'salida_activa',
-        () => _client
-            .from('tanda_muestras')
-            .select('muestra_id')
-            .eq('tanda_id', _tandaDbId)
-            .eq('estado', 'activa')
-            .order('orden', ascending: true)
-            .limit(1)
-            .maybeSingle(),
-      );
+      final activa = await _leerMuestraActiva();
       if (activa == null) return;
-      final idActiva = activa['muestra_id'];
+      final idActiva = activa['muestra_id']?.toString();
+      if (idActiva == null || idActiva.isEmpty) return;
       if (!_mismoId(idActiva, muestraId) && !_mismoId(idActiva, _muestraDbId)) {
-        _notificar();
+        _notificar(
+          CataSalidaRemota(
+            motivo: CataSalidaMotivo.otraMuestraActiva,
+            nuevaMuestraId: idActiva,
+            codigoMuestraActual: codigoMuestra,
+          ),
+        );
       }
     } catch (_) {
       // Best-effort.
     }
   }
 
-  void _onTandaMuestraUpdate(Map<String, dynamic> record) {
+  Future<void> _onTandaMuestraUpdate(Map<String, dynamic> record) async {
+    if (_notificado) return;
     final estado = (record['estado']?.toString() ?? '').toLowerCase();
     final esActiva = estado == 'activa' || estado == 'en_curso';
 
     if (_esMuestra(record)) {
-      if (!esActiva) _notificar();
+      if (!esActiva) {
+        final info = await _clasificarSalida(estadoActual: estado);
+        if (info != null) _notificar(info);
+      }
       return;
     }
 
-    if (esActiva) _notificar();
+    if (esActiva) {
+      final id = record['muestra_id']?.toString();
+      _notificar(
+        CataSalidaRemota(
+          motivo: CataSalidaMotivo.otraMuestraActiva,
+          nuevaMuestraId: id,
+          codigoMuestraActual: codigoMuestra,
+        ),
+      );
+    }
+  }
+
+  Future<CataSalidaRemota?> _clasificarSalida({
+    required String estadoActual,
+  }) async {
+    final activa = await _leerMuestraActiva();
+    final idActiva = activa?['muestra_id']?.toString();
+    if (idActiva != null &&
+        idActiva.isNotEmpty &&
+        !_mismoId(idActiva, muestraId) &&
+        !_mismoId(idActiva, _muestraDbId)) {
+      return CataSalidaRemota(
+        motivo: CataSalidaMotivo.otraMuestraActiva,
+        nuevaMuestraId: idActiva,
+        codigoMuestraActual: codigoMuestra,
+      );
+    }
+
+    if (estadoActual == 'completada' || estadoActual == 'finalizada') {
+      return CataSalidaRemota(
+        motivo: CataSalidaMotivo.muestraAprobada,
+        codigoMuestraActual: codigoMuestra,
+      );
+    }
+
+    return CataSalidaRemota(
+      motivo: CataSalidaMotivo.muestraDetenida,
+      codigoMuestraActual: codigoMuestra,
+    );
+  }
+
+  Future<Map<String, dynamic>?> _leerMuestraActiva() {
+    return Diagnostico.pollSelect(
+      'salida_activa',
+      () => _client
+          .from('tanda_muestras')
+          .select('muestra_id')
+          .eq('tanda_id', _tandaDbId)
+          .eq('estado', 'activa')
+          .order('orden', ascending: true)
+          .limit(1)
+          .maybeSingle(),
+    );
   }
 
   bool _esMuestra(Map<String, dynamic> record) {
@@ -164,12 +224,12 @@ class CataPageRealtimeSync {
     return ia != null && ib != null && ia == ib;
   }
 
-  void _notificar() {
+  void _notificar(CataSalidaRemota info) {
     if (_notificado) return;
     _notificado = true;
     _pollTimer?.cancel();
     _pollTimer = null;
-    onForzarSalida();
+    onForzarSalida(info);
   }
 
   Future<void> dispose() async {

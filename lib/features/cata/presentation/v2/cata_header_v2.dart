@@ -26,6 +26,9 @@ class CataHeaderV2 extends StatelessWidget {
     this.onBack,
     this.onTrucos,
     this.onSalirInicio,
+    this.codigoMuestra,
+    this.extrasSoloPruebas = false,
+    this.esModoPruebasApp = false,
   });
 
   final String concursoNombre;
@@ -41,6 +44,12 @@ class CataHeaderV2 extends StatelessWidget {
   final String? paisCodigo;
   final VoidCallback? onTrucos;
   final VoidCallback? onSalirInicio;
+  /// Chip destacado "Muestra XXXX" (p. ej. V5, legible de lejos).
+  final String? codigoMuestra;
+  /// Si true: Tanda/Puesto/Tablet/local/latencia/refresco solo en modo pruebas.
+  final bool extrasSoloPruebas;
+  /// App en modo pruebas (aunque el chip PRUEBAS solo salga al presidente).
+  final bool esModoPruebasApp;
 
   static const double height = CataV2Theme.altoCabecera;
 
@@ -50,6 +59,11 @@ class CataHeaderV2 extends StatelessWidget {
         ? 'LA RÁBIDA 2027'
         : concursoNombre.toUpperCase();
     final admin = CataV2Theme.mostrarInfoAdministrador;
+    final mostrarExtras =
+        !extrasSoloPruebas || esModoPruebasApp || mostrarModoPruebas;
+    final muestra = codigoMuestra?.trim();
+    // Misma regla que ficha V5.1 móvil: lado corto < 600.
+    final movil = MediaQuery.sizeOf(context).shortestSide < 600;
 
     return ColoredBox(
       color: CataV2Theme.cabecera,
@@ -58,7 +72,7 @@ class CataHeaderV2 extends StatelessWidget {
         children: [
           const StatusBarSpacer(color: CataV2Theme.cabecera),
           SizedBox(
-            height: height,
+            height: movil ? height + 6 : height,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Row(
@@ -83,80 +97,141 @@ class CataHeaderV2 extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                   ],
-                  _TituloHold(
-                    titulo: titulo,
-                    onHoldComplete: onSalirInicio,
-                  ),
-                  const SizedBox(width: 10),
+                  if (!movil) ...[
+                    _TituloHold(
+                      titulo: titulo,
+                      onHoldComplete: onSalirInicio,
+                    ),
+                    const SizedBox(width: 10),
+                  ] else
+                    // Hold oculto para truco «salir a inicio»; sin título ni flechas de muestra.
+                    _TituloHold(
+                      titulo: '',
+                      onHoldComplete: onSalirInicio,
+                      child: const SizedBox(width: 4, height: 24),
+                    ),
                   if (admin)
                     Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            PaisFlag.emoji(paisCodigo),
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                          const SizedBox(width: 4),
-                          Flexible(
-                            child: Text(
-                              catadorNombre,
-                              style: CataV2Theme.text(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                      child: movil
+                          ? _FilaIdentidadMovil(
+                              catadorNombre: catadorNombre,
+                              paisCodigo: paisCodigo,
+                              rolLabel: rolLabel,
+                              mesaNumero: mesaNumero,
+                              codigoMuestra: muestra,
+                              onRefresh: onRefresh,
+                            )
+                          : Row(
+                              children: [
+                                Text(
+                                  PaisFlag.emoji(paisCodigo),
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    catadorNombre,
+                                    style: CataV2Theme.text(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                _Pill(
+                                  text: rolLabel.toUpperCase(),
+                                  destacado: true,
+                                ),
+                                _Pill(text: 'Mesa $mesaNumero'),
+                                if (muestra != null && muestra.isNotEmpty) ...[
+                                  const SizedBox(width: 4),
+                                  _MuestraChip(codigo: muestra),
+                                ],
+                                const Spacer(flex: 1),
+                                if (mostrarExtras)
+                                  Flexible(
+                                    flex: 2,
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerRight,
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (tandaNumero != null)
+                                              _Pill(
+                                                text: 'Tanda $tandaNumero',
+                                                tecnico: extrasSoloPruebas,
+                                              ),
+                                            if (puesto != null)
+                                              _Pill(
+                                                text: 'Puesto $puesto',
+                                                tecnico: extrasSoloPruebas,
+                                              ),
+                                            if (tabletNumero != null)
+                                              _Pill(
+                                                text: 'Tablet $tabletNumero',
+                                                tecnico: extrasSoloPruebas,
+                                              ),
+                                            if (mostrarModoPruebas) ...[
+                                              const SizedBox(width: 4),
+                                              const _Chip(
+                                                label: 'PRUEBAS',
+                                                background: Color(0xFFC62828),
+                                              ),
+                                              if (onTrucos != null) ...[
+                                                const SizedBox(width: 4),
+                                                _ActionChip(
+                                                  label: 'TRUCOS',
+                                                  onPressed: onTrucos!,
+                                                ),
+                                              ],
+                                            ],
+                                            const SizedBox(width: 4),
+                                            ServidorEstadoChip(
+                                              compact: true,
+                                              tecnicoMuted: extrasSoloPruebas,
+                                            ),
+                                            const NubeBadge(),
+                                            DiagnosticoBoton(
+                                              tabletNumero: tabletNumero,
+                                              rolLabel: rolLabel,
+                                            ),
+                                            IconButton(
+                                              onPressed: onRefresh,
+                                              iconSize: TabletLayout
+                                                      .headerIconSize -
+                                                  8,
+                                              color: extrasSoloPruebas
+                                                  ? Colors.white.withValues(
+                                                      alpha: 0.72)
+                                                  : Colors.white,
+                                              icon: const Icon(Icons.refresh),
+                                              tooltip:
+                                                  'Recargar puntuación del servidor',
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              padding: EdgeInsets.zero,
+                                              constraints:
+                                                  const BoxConstraints(
+                                                minWidth: 34,
+                                                minHeight: 34,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(width: 6),
-                          _Pill(
-                            text: rolLabel.toUpperCase(),
-                            destacado: true,
-                          ),
-                          _Pill(text: 'Mesa $mesaNumero'),
-                          if (tandaNumero != null)
-                            _Pill(text: 'Tanda $tandaNumero'),
-                          if (puesto != null) _Pill(text: 'Puesto $puesto'),
-                          if (tabletNumero != null)
-                            _Pill(text: 'Tablet $tabletNumero'),
-                        ],
-                      ),
                     )
                   else
                     const Spacer(),
-                  if (mostrarModoPruebas) ...[
-                    const SizedBox(width: 6),
-                    const _Chip(
-                      label: 'PRUEBAS',
-                      background: Color(0xFFC62828),
-                    ),
-                    if (onTrucos != null) ...[
-                      const SizedBox(width: 4),
-                      _ActionChip(label: 'TRUCOS', onPressed: onTrucos!),
-                    ],
-                  ],
-                  const SizedBox(width: 4),
-                  const ServidorEstadoChip(compact: true),
-                  const NubeBadge(),
-                  DiagnosticoBoton(
-                    tabletNumero: tabletNumero,
-                    rolLabel: rolLabel,
-                  ),
-                  IconButton(
-                    onPressed: onRefresh,
-                    iconSize: TabletLayout.headerIconSize - 8,
-                    color: Colors.white,
-                    icon: const Icon(Icons.refresh),
-                    tooltip: 'Recargar puntuación del servidor',
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 34,
-                      minHeight: 34,
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -167,11 +242,82 @@ class CataHeaderV2 extends StatelessWidget {
   }
 }
 
+/// Cabecera móvil: nombre, rol, mesa y chip de muestra (sin flechas).
+class _FilaIdentidadMovil extends StatelessWidget {
+  const _FilaIdentidadMovil({
+    required this.catadorNombre,
+    required this.paisCodigo,
+    required this.rolLabel,
+    required this.mesaNumero,
+    required this.onRefresh,
+    this.codigoMuestra,
+  });
+
+  final String catadorNombre;
+  final String? paisCodigo;
+  final String rolLabel;
+  final int mesaNumero;
+  final String? codigoMuestra;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final muestra = codigoMuestra?.trim();
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            PaisFlag.emoji(paisCodigo),
+            style: const TextStyle(fontSize: 13),
+          ),
+          const SizedBox(width: 3),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 120),
+            child: Text(
+              catadorNombre,
+              style: CataV2Theme.text(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 4),
+          _Pill(text: rolLabel.toUpperCase(), destacado: true),
+          _Pill(text: 'Mesa $mesaNumero'),
+          if (muestra != null && muestra.isNotEmpty)
+            _MuestraChip(codigo: muestra, compacto: true),
+          IconButton(
+            onPressed: onRefresh,
+            iconSize: 18,
+            color: Colors.white.withValues(alpha: 0.85),
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Recargar puntuación del servidor',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TituloHold extends StatefulWidget {
-  const _TituloHold({required this.titulo, this.onHoldComplete});
+  const _TituloHold({
+    required this.titulo,
+    this.onHoldComplete,
+    this.child,
+  });
 
   final String titulo;
   final VoidCallback? onHoldComplete;
+  final Widget? child;
 
   @override
   State<_TituloHold> createState() => _TituloHoldState();
@@ -206,43 +352,102 @@ class _TituloHoldState extends State<_TituloHold> {
       onPointerDown: (_) => _start(),
       onPointerUp: (_) => _cancel(),
       onPointerCancel: (_) => _cancel(),
-      child: Text(
-        widget.titulo,
-        style: CataV2Theme.text(
-          color: Colors.white,
-          fontSize: 14,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0.2,
+      child: widget.child ??
+          Text(
+            widget.titulo,
+            style: CataV2Theme.text(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.2,
+            ),
+          ),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  const _Pill({
+    required this.text,
+    this.destacado = false,
+    this.tecnico = false,
+  });
+
+  final String text;
+  final bool destacado;
+  final bool tecnico;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg;
+    final Color fg;
+    final double size;
+    if (destacado) {
+      bg = const Color(0xFFE8F5E9);
+      fg = CataV2Theme.cabecera;
+      size = 11;
+    } else if (tecnico) {
+      bg = Colors.white.withValues(alpha: 0.10);
+      fg = Colors.white.withValues(alpha: 0.62);
+      size = 12;
+    } else {
+      bg = Colors.white.withValues(alpha: 0.16);
+      fg = Colors.white;
+      size = 11;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(right: 5),
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: tecnico ? 7 : 9,
+          vertical: tecnico ? 4 : 5,
+        ),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          text,
+          style: CataV2Theme.text(
+            color: fg,
+            fontSize: size,
+            fontWeight: tecnico ? FontWeight.w600 : FontWeight.w800,
+          ),
         ),
       ),
     );
   }
 }
 
-class _Pill extends StatelessWidget {
-  const _Pill({required this.text, this.destacado = false});
+/// Chip de muestra grande para lectura a distancia en mesa.
+class _MuestraChip extends StatelessWidget {
+  const _MuestraChip({required this.codigo, this.compacto = false});
 
-  final String text;
-  final bool destacado;
+  final String codigo;
+  final bool compacto;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(right: 5),
+      padding: EdgeInsets.only(right: compacto ? 2 : 6),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        padding: EdgeInsets.symmetric(
+          horizontal: compacto ? 8 : 12,
+          vertical: compacto ? 3 : 4,
+        ),
         decoration: BoxDecoration(
-          color: destacado
-              ? const Color(0xFFE8F5E9)
-              : Colors.white.withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(14),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(compacto ? 8 : 10),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
         ),
         child: Text(
-          text,
+          'Muestra $codigo',
           style: CataV2Theme.text(
-            color: destacado ? CataV2Theme.cabecera : Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
+            color: CataV2Theme.cabecera,
+            fontSize: compacto ? 13 : 18,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.2,
+            height: 1.05,
           ),
         ),
       ),

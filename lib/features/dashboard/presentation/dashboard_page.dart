@@ -8,6 +8,7 @@ import 'package:virtus2027/core/models/catador.dart';
 import 'package:virtus2027/core/models/categoria.dart';
 import 'package:virtus2027/core/models/tanda.dart';
 import 'package:virtus2027/features/cata/data/cata_repository.dart';
+import 'package:virtus2027/features/cata/domain/cata_salida_remota.dart';
 import 'package:virtus2027/features/cata/presentation/cata_page.dart';
 import 'package:virtus2027/features/dashboard/data/catador_auto_cata_sync.dart';
 import 'package:virtus2027/features/dashboard/data/dashboard_realtime_sync.dart';
@@ -99,13 +100,7 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   void _ensureCatadorAutoSync(TabletDashboard dashboard) {
-    if (_esPresidente(dashboard)) {
-      _autoCata?.dispose();
-      _autoCata = null;
-      _autoCataTandaId = null;
-      return;
-    }
-
+    // Presidente y catador: si Gestión activa una muestra, abrirla solos.
     final tandaId = dashboard.tanda?.id;
     if (tandaId == null || tandaId.isEmpty) return;
     if (_autoCataTandaId == tandaId && _autoCata != null) {
@@ -118,7 +113,7 @@ class _DashboardPageState extends State<DashboardPage> {
     _autoCata = CatadorAutoCataSync(
       tandaId: tandaId,
       onMuestraActiva: (muestraId) {
-        unawaited(_abrirCataAutomaticaCatador(muestraId));
+        unawaited(_abrirCataAutomaticaDesdeServidor(muestraId));
       },
     );
     _autoCata!.start();
@@ -131,7 +126,7 @@ class _DashboardPageState extends State<DashboardPage> {
     return ia != null && ib != null && ia == ib;
   }
 
-  Future<void> _abrirCataAutomaticaCatador(String muestraId) async {
+  Future<void> _abrirCataAutomaticaDesdeServidor(String muestraId) async {
     if (!mounted || _abriendoCata) return;
     if (_cataAbiertaMuestraId != null &&
         _mismoId(_cataAbiertaMuestraId!, muestraId)) {
@@ -145,7 +140,7 @@ class _DashboardPageState extends State<DashboardPage> {
     } catch (_) {
       return;
     }
-    if (!mounted || _esPresidente(dashboard)) return;
+    if (!mounted) return;
     if (dashboard.tanda == null || dashboard.catador == null) return;
     if (dashboard.categoria == null) return;
 
@@ -207,9 +202,9 @@ class _DashboardPageState extends State<DashboardPage> {
       await _ensureRealtimeSubscription(dashboard.tanda?.id);
       _ensureCatadorAutoSync(dashboard);
       await _sincronizarEstadoTandaCompletada(dashboard);
-      if (_esPresidente(dashboard) || _abriendoCata) return;
+      if (_abriendoCata) return;
       if (DashboardMuestraUtils.tandaCompletada(dashboard.muestras)) return;
-      // Si el presidente acaba de abrir, no esperar solo al poll.
+      // Gestión o presidente activaron: abrir en todas las tablets de la mesa.
       MuestraEnTanda? activa;
       for (final m in dashboard.muestras) {
         if (DashboardMuestraUtils.estaActiva(m) &&
@@ -219,7 +214,7 @@ class _DashboardPageState extends State<DashboardPage> {
         }
       }
       if (activa != null) {
-        await _abrirCataAutomaticaCatador(activa.muestraId);
+        await _abrirCataAutomaticaDesdeServidor(activa.muestraId);
       }
     } catch (_) {
       // Best-effort.
@@ -517,10 +512,9 @@ class _DashboardPageState extends State<DashboardPage> {
     TabletDashboard dashboard,
     bool esPresidente,
   ) {
+    // Catadas: solo consulta (Mis puntos / media). La recata se pide al admin
+    // en viva voz, no desde la app.
     if (DashboardMuestraUtils.estaCatada(muestra)) {
-      if (esPresidente) {
-        unawaited(_mostrarDialogoMuestraCerrada(muestra, dashboard));
-      }
       return;
     }
     if (DashboardMuestraUtils.estaIncidencia(muestra) ||
@@ -537,55 +531,6 @@ class _DashboardPageState extends State<DashboardPage> {
       colorPrimario: dashboard.concursoColorPrimario,
       dashboard: dashboard,
     );
-  }
-
-  Future<void> _mostrarDialogoMuestraCerrada(
-    MuestraEnTanda muestra,
-    TabletDashboard dashboard,
-  ) async {
-    final tanda = dashboard.tanda;
-    if (tanda == null) return;
-
-    final pedir = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Muestra ${muestra.codigoDisplay}'),
-        content: const Text(
-          'Muestra cerrada. Para recatar, pide permiso al administrador',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cerrar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Pedir recata al admin'),
-          ),
-        ],
-      ),
-    );
-
-    if (pedir != true || !mounted) return;
-
-    try {
-      await CataRepository().marcarIncidencia(
-        tandaId: tanda.id,
-        muestraId: muestra.muestraId,
-        motivo: 'RECATA solicitada',
-      );
-      if (!mounted) return;
-      _reload();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            e is PostgrestException ? e.message : e.toString(),
-          ),
-        ),
-      );
-    }
   }
 
   Future<void> _abrirCata(
@@ -651,13 +596,89 @@ class _DashboardPageState extends State<DashboardPage> {
       _abriendoCata = false;
       _cataAbiertaMuestraId = null;
       if (!mounted) return;
+
+      final salidaRemota = result is CataSalidaRemota ? result : null;
+      if (salidaRemota != null && salidaRemota.avisarUsuario) {
+        await showDialog<void>(
+          context: this.context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: Text(salidaRemota.tituloModal),
+            content: Text(salidaRemota.mensajeModal),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Entendido'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted) return;
+      }
+
       if (result != null) {
         await _reloadTrasAprobar();
       } else {
         await _reload();
       }
-      _autoCata?.resumePoll();
+      if (!mounted) return;
+
+      var reabierta = false;
+      if (salidaRemota != null && salidaRemota.intentarAbrirActiva) {
+        reabierta = await _abrirMuestraActivaTrasGestion(
+          preferidaId: salidaRemota.nuevaMuestraId,
+        );
+      }
+
+      if (!reabierta) {
+        _autoCata?.resumePoll();
+      }
     });
+  }
+
+  /// Tras orden de Gestión: abre la muestra `activa` (presidente y catador).
+  /// No llama a `abrirCataMuestra` (ya está activa en BD).
+  Future<bool> _abrirMuestraActivaTrasGestion({String? preferidaId}) async {
+    if (!mounted || _abriendoCata) return false;
+
+    TabletDashboard dashboard;
+    try {
+      dashboard = await _repository.fetchForDispositivo(widget.dispositivo);
+    } catch (_) {
+      return false;
+    }
+    if (!mounted) return false;
+    if (dashboard.tanda == null || dashboard.catador == null) return false;
+    if (dashboard.categoria == null) return false;
+
+    MuestraEnTanda? muestra;
+    if (preferidaId != null && preferidaId.isNotEmpty) {
+      for (final m in dashboard.muestras) {
+        if (_mismoId(m.muestraId, preferidaId) &&
+            DashboardMuestraUtils.estaActiva(m) &&
+            !DashboardMuestraUtils.estaCatada(m)) {
+          muestra = m;
+          break;
+        }
+      }
+    }
+    muestra ??= DashboardMuestraUtils.muestraActiva(dashboard.muestras);
+    if (muestra == null ||
+        !DashboardMuestraUtils.estaActiva(muestra) ||
+        DashboardMuestraUtils.estaCatada(muestra)) {
+      return false;
+    }
+
+    _abrirCata(
+      context,
+      muestra: muestra,
+      tanda: dashboard.tanda!,
+      catador: dashboard.catador!,
+      categoria: dashboard.categoria,
+      colorPrimario: dashboard.concursoColorPrimario,
+      dashboard: dashboard,
+    );
+    return true;
   }
 
   @override
@@ -918,6 +939,8 @@ class _DashboardPageState extends State<DashboardPage> {
                                               .concursoColorPrimario,
                                           categoriaFallback:
                                               categoriaNombre,
+                                          readOnly:
+                                              filtro == MuestraFiltro.catadas,
                                           onMuestraTap: (muestra) =>
                                               _tapMuestraLista(
                                             muestra,
